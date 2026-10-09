@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+build/
+dist/
+.venv/
+venv/
+.idea/
+.vscode/
+launcher_settings.json
+installed_mods.json
+community_catalog.json
+CHECKPOINT_LAUNCHER.txt
+Forge Hub Uploads/
+public_hub/
+backups*/
+_*
+Crash Forge Launcher Dist/
+Crash Forge Launcher BuildTools/

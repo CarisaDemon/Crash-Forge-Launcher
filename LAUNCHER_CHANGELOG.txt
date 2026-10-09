@@ -1,0 +1,250 @@
+Crash Forge: Racing Launcher
+
+v0.3.28
+- Separate automatic updates for the launcher through CarisaDemon/Crash-Forge-Launcher, independent of Windows game releases.
+- Launcher updates are checked in the background, downloaded with mandatory SHA-256, and applied after closing via a separate updater with backups and rollback.
+- No automatic launcher self-modification in the developer/source tree; auto-update applies only to portable packaged Windows builds.
+- Settings: AUTO-UPDATE LAUNCHER (enabled by default), CHECK, and status of the latest launcher release. No silent game updates.
+- PLAY automatically becomes INSTALL if the game is missing. INSTALL remains disabled until an official verified stable Windows game release is available.
+- Added an out-of-process Windows launcher updater and portable release packaging/validation scripts.
+- Separate Launcher source/distribution repo prepared without game binaries, personal files or private mod uploads.
+
+v0.3.27
+- A valid installed ctr-native.exe now appears as 100% in Installation Status; an absent game remains at 0%.
+- Automatically recovers the verified existing installation when the saved installation folder contains no game.
+- Connects the UPDATE action and Settings CHECK button to official GitHub Releases for CarisaDemon/Crash-Forge-Racing.
+- GitHub release checks run in the background: On launch, Every 6 hours, Every 12 hours, Daily, Weekly, or Manual only.
+- Version-check frequency and the most recent result persist across launcher sessions.
+- An update installs only after explicit confirmation, from an official Windows ZIP with a required SHA-256 checksum.
+- Verified updates preserve mods/saves, create per-file backups, reject unsafe archives, and roll back files if installation fails.
+- GitHub game releases also populate NEWS when an actual Windows game package is published.
+- The site/mod catalog remains connected independently to Forge Hub's public Supabase feed.
+- A missing GitHub Release or an offline service never fakes installation progress or downloads.
+- Settings provides CHECK and GITHUB buttons; a compact window keeps options accessible at small resolutions.
+
+v0.3.26
+- Fixed SETTINGS being a collapsed 42px strip in wide-but-short windows, including 1521x825.
+- SETTINGS is now a real, full-height dashboard tab whenever the dashboard is too short for both SETTINGS and CHANGELOG.
+- On large windows with adequate height, SETTINGS opens by default alongside CHANGELOG.
+- The existing installation folder, clickable path, BROWSE control and help text remain visible within SETTINGS.
+- Compact CHANGELOG and SETTINGS tabs use the same right-hand panel without covering or clipping each other.
+- Verified settings controls and CHANGELOG across 1920x1080, 1600x900, 1521x825, 1440x1080, 1366x768, 1280x820, 1280x1024, 1024x768, 800x600 and 760x520.
+
+v0.3.25
+- The frameless launcher can now be resized by dragging any side or corner; maximize/restore preserves the chosen window size.
+- Responsive breakpoints adapt to small 16:9 windows and 4:3 ratios without fixed dashboard columns clipping each other.
+- Compact view includes NEWS, INSTALLATION, CHANGELOG and SETTINGS navigation; large windows retain the original three-column dashboard.
+- Buttons, captions, installation progress, sidebar and hero status are reflowed for narrow and short windows.
+- Forge Hub ADD LOCAL form now scrolls at low resolutions, keeping SAVE LOCAL MOD and SUBMIT PUBLIC reachable.
+- Installation status updates no longer force a hidden panel to appear over an active tab.
+- Preserved industrial background, English labels and existing Forge Hub features.
+
+v0.3.24
+- Forge Hub now supports Maps / Tracks (Race Track, Battle Arena and Hub), including cards, filters and installation in assets/mods/tracks.
+- Character classification is limited to the four vanilla CTR physics classes: Balanced, Speed, Acceleration and Turning (no Custom).
+- Karts now distinguish wheeled models, wheel setups (included/modular) and wheel-free hovercrafts.
+- Creator Studio, public profiles, moderation schema and public manifest validation preserve category metadata.
+- Forge Hub search and filters use separate rows on narrower launcher windows.
+- Responsive layout now fits the monitor work area, including taskbars and compact laptop screens.
+- NEWS and CHANGELOG have independent scroll areas instead of clipping outside their panels.
+- Main dashboard, sidebar buttons, paths and progress now adapt to narrow and short windows.
+- SETTINGS stays collapsed by default to leave room for CHANGELOG; click its heading to expand.
+- On very short windows, SETTINGS opens a compact dialog rather than covering CHANGELOG.
+- Corrected panel widths, vertical spacing and title overlay so controls remain accessible.
+
+v0.3.23
+- Removed fake NEWS items, fake download percentages and fictional mod download/like counts.
+- Main panel now shows actual game executable presence and install path; PLAY starts the selected game.
+- Launcher CHANGELOG now reads the real local changelog.
+- Forge Hub supports configurable HTTPS community feeds and submission page links.
+- Public mods require verified SHA-256 ZIP packages before extraction, with previous-version backup.
+- Removed eight demo entries from the live catalog while retaining their backup and any genuine local uploads.
+- Game UPDATE and REPAIR do not pretend to download/repair; full updater remains pending.
+
+v0.3.22
+- Added a floating EDITOR button to the launcher header.
+- Added a Forge-styled Editor tool selector window using the current workshop artwork.
+- OGG MUSIC opens the existing CTR Music Toolkit for .ogg workflows.
+- CSEQ / MIDI opens the Crash Forge CSEQ Toolkit MIDI workflow.
+- MODEL IMPORTER is visible as COMING SOON but intentionally not linked yet.
+- Selecting an available editor closes only the selector window and keeps the launcher running.
+
+v0.3.21
+- Loosened the main layout so BUILD STATUS now shows READY TO RACE instead of being clipped.
+- Reduced vertical spacing around the left-side buttons and status area.
+- Moved the CURRENT BUILD card lower so the floating header no longer covers it.
+- Increased SETTINGS height so install location controls and helper text have room.
+- Improved small-window scaling by allowing the UI and Forge buttons to shrink a bit further.
+
+v0.3.20
+- Fondo.png now rescales dynamically to the current launcher window size.
+- The complete background remains visible instead of being cropped on smaller windows.
+- Background scaling updates while resizing and when maximizing/restoring the launcher.
+- Header, hero and the gaps between dashboard panels all use the same scaled background image.
+- Added Pillow-backed high-quality resizing with a safe Tk fallback.
+
+v0.3.19
+- Fondo.png now shows through the empty gaps between dashboard sections.
+- Added seamless background visibility between sidebar/hero and between NEWS, INSTALLATION STATUS, CHANGELOG and SETTINGS.
+- Kept all content panels opaque while only the spacing between them reveals the workshop artwork.
+- Background alignment follows the launcher window so the image remains continuous across sections.
+
+v0.3.18
+- Removed the remaining 82px reserved header row from the main layout.
+- The logo, launcher version and window controls now sit in a true floating overlay that consumes no layout height.
+- Extended the main content underneath the floating header.
+- Aligned Fondo.png globally between the floating header and hero to remove the visible horizontal seam.
+- Preserved window dragging and all window controls.
+
+v0.3.17
+- Removed the visible top-bar treatment entirely.
+- Crash Forge branding, launcher version and window controls now float directly over the workshop artwork.
+- Removed the permanent dark plate behind the branding.
+- Removed the combined frame behind minimize/maximize/close; only the glyphs remain visible.
+- Kept drag, double-click maximize, minimize, maximize and close behavior.
+
+v0.3.16
+- Added assets/Fondo.png as the launcher artwork background through a 2560x1440 display copy.
+- Removed the solid separated top bar look.
+- Kept only the Crash Forge branding, launcher version and window controls over the artwork.
+- Removed the old top separator line.
+- Reworked the main hero to use the Forge workshop background instead of the technical grid/slash artwork.
+- Preserved drag, minimize, maximize and close behavior.
+
+v0.3.15
+- Reworked the main menu hero into a cleaner industrial dashboard.
+- Added a darker technical grid, forged right-side panel and restrained orange heat accents.
+- Added CURRENT BUILD / READY status presentation and feature chips.
+- Replaced the plain sidebar game status line with a dedicated BUILD STATUS card.
+- Kept the existing layout and functionality intact.
+
+v0.3.14
+- Maximize now targets the monitor where the launcher is currently located.
+- Uses that monitor's working area instead of always using the primary display.
+- Keeps the Windows taskbar/work-area limits of the active monitor.
+
+v0.3.13
+- SETTINGS now shows the current Crash Forge: Racing install location.
+- Added a BROWSE button to choose/change where the game will be installed.
+- The selected install path is saved persistently in launcher_settings.json.
+- Clicking the displayed path opens the current install folder.
+- Added INSTALLED / TARGET LOCATION / LOCATION NOT CREATED YET status detection.
+
+v0.3.12
+- Mouse wheel scrolling now works across the entire Forge Hub mod browser.
+- Scrolling works while hovering mod cards, labels, buttons, filters or the search box.
+- Increased wheel scroll speed slightly for the mod grid.
+
+v0.3.11
+- Local Forge Hub mods now open a real DETAILS panel instead of only changing the status line.
+- Local mods no longer show an INSTALL button.
+- Online mods use INSTALL when missing, UPDATE when a newer catalog version exists, and disabled INSTALLED when current.
+- Added disabled button styling and local/online mod detection.
+- Local uploads are now tagged as local automatically.
+
+v0.3.10
+- Reworked only the Kart exhaust using the user's latest sketch as reference.
+- Exhaust now leaves the engine as two visible tube edges and joins into one rounded outlet.
+- Kept the rest of the kart icon unchanged from v0.3.9.
+
+v0.3.9
+- Removed the unidentified rear frame/body piece above the engine.
+- Kept the rest of the v0.3.8 kart icon unchanged.
+- Exhaust remains as the cleaned single pipe.
+
+v0.3.8
+- Reverted the Kart preview to the v0.3.6 design.
+- Kept wheels, chassis, steering, seat, engine and rear body unchanged.
+- Changed only the exhaust: one short continuous pipe attached to the engine with a clean round outlet.
+
+v0.3.7
+- Reworked the Kart preview rear section.
+- Moved the engine in front of the rear wheel and attached it to the chassis.
+- Simplified the empty seat so it reads separately from the engine.
+- Replaced the messy rear geometry with a single clean exhaust pipe and aligned tip.
+- Removed floating rear pieces.
+
+v0.3.6
+- Fixed the Kart preview PNG so it loads correctly instead of falling back to floor + wheels.
+- Kart preview now includes the steering wheel, seat/rear frame, engine block and exhaust pipe from the supplied sketch.
+- Rebuilt assets/art/kart_sketch_icon.png as a valid transparent PNG.
+
+v0.3.5
+- Replaced the hand-drawn Kart preview geometry with the user's actual kart sketch as a PNG asset.
+- The Kart icon now uses the supplied silhouette directly instead of an interpreted redraw.
+- Added transparent kart_sketch_icon.png under assets/art.
+
+v0.3.4
+- Rebuilt the Forge Hub Kart icon directly from the supplied kart-with-wheels reference.
+- Uses the angular front nose, long upper blade, straight floor rail, tall rear shell and low-poly wheels from the reference.
+- Removed the rounded/generic kart interpretation.
+- No driver is drawn.
+
+v0.3.3
+- Rebuilt the Forge Hub Kart icon around the original CTR kart silhouette, without a driver.
+- Added exposed rear/front wheels, low rounded body, empty bucket seat, steering wheel and compact rear engine.
+- Removed the spoiler-heavy design that made the previous icon hard to read.
+- Kept only subtle orange accents so the icon reads as a kart first.
+
+v0.3.2
+- Reworked Forge Hub Kart preview icon into a more detailed industrial side-profile.
+- Added clear front/rear wheels with hubs, low chassis, seat, steering wheel, rear spoiler, nose, exhaust and orange forge accents.
+- Preserved quick readability so the icon still clearly reads as a kart at small sizes.
+
+v0.3.1
+- Added a real SEARCH button to Forge Hub.
+- Pressing Enter in the search field now runs the same search action.
+- Newly uploaded mods are immediately placed into the search results.
+- Improved Character preview icon while keeping the existing people/profile style.
+- Reworked Kart icon to read more clearly as a kart.
+- Reworked Wheels icon with tire, rim, spokes and orange hub detail.
+
+v0.3.0
+- Added Forge Hub community mod browser inside the launcher.
+- MODS now opens Forge Hub without leaving the launcher.
+- Search community mods by name, author, description or type.
+- Filter by Characters, Karts and Wheels.
+- Sort by Newest, Most Downloaded, Most Liked or Name.
+- Added mod cards with author, version, downloads, likes and description.
+- Added Upload Mod flow inside the same launcher.
+- Upload preview accepts Character, Kart or Wheels packages.
+- Local community catalog is stored in community_catalog.json.
+- Online server/API is intentionally not connected yet; the UI/storage layer is ready for it.
+- Added local preview entries for current modular content.
+
+v0.2.4
+- Added responsive window layout.
+- UI scales when the launcher is resized or maximized.
+- Button rail scales proportionally without being tied to NEWS width.
+- NEWS, INSTALLATION STATUS and the right column adapt to available space.
+- Fonts scale with the window.
+- Settings panel grows with the available height.
+- Installation progress bar adapts its size and percentage text.
+
+v0.2.3
+- Minimize button now uses native Windows minimize behavior.
+- Restores correctly from the Windows taskbar.
+
+v0.2.2
+- Increased default launcher height from 760 to 820 px.
+- Added maximize / restore button between minimize and close.
+- Double-clicking the custom title bar also toggles maximize.
+- Maximizing respects the Windows work area instead of covering the taskbar.
+
+v0.2.1
+- Split the launcher into an independent top and bottom dashboard layout.
+- Restored the button rail to its original narrow width.
+- NEWS now uses a wider bottom panel without stretching the main buttons.
+- INSTALLATION STATUS remains in the bottom dashboard beside NEWS.
+- CHANGELOG + SETTINGS remain on the right.
+
+v0.2.0
+- Industrial launcher visual redesign.
+- Custom CF:R taskbar / Alt+Tab icon.
+- Transparent program icon.
+- PLAY / UPDATE / REPAIR / MODS forged buttons.
+- Installation Status moved to large lower panel.
+- NEWS moved to wider sidebar and enlarged.
+- CHANGELOG + SETTINGS panel added.
+- Install Location field prepared.
+- Download progress UI prepared for real updater data.

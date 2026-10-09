@@ -1,0 +1,73 @@
+name: Build Windows Launcher Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-launcher:
+    name: Package Windows Launcher
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout clean launcher repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify matching version tag
+        shell: pwsh
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $version=(Get-Content launcher_version.txt -Raw).Trim()
+          if ($env:GITHUB_REF_NAME -ne ("v"+$version)) {
+            throw "Tag $env:GITHUB_REF_NAME must match launcher_version.txt v$version"
+          }
+
+      - name: Install pinned Windows build dependencies
+        shell: pwsh
+        run: python -m pip install --disable-pip-version-check -r requirements-build.txt
+
+      - name: Test updater safety (no game files)
+        shell: pwsh
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Build and validate portable Windows app
+        shell: pwsh
+        env:
+          CFR_BUILD_DIR: build
+        run: ./release_tools/build_windows.ps1
+
+      - name: Verify frozen EXE and updater process without showing UI
+        shell: pwsh
+        env:
+          CFR_BUILD_DIR: build
+        run: python release_tools/smoke_portable.py
+
+      - name: Upload build artifacts for testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Crash-Forge-Launcher-Windows
+          path: |
+            build/release/Crash-Forge-Launcher-Windows.zip
+            build/release/Crash-Forge-Launcher-Windows.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release (version tags only)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          generate_release_notes: true
+          prerelease: false
+          files: |
+            build/release/Crash-Forge-Launcher-Windows.zip
+            build/release/Crash-Forge-Launcher-Windows.zip.sha256
