@@ -50,9 +50,17 @@ _FORBIDDEN_SUFFIXES = frozenset({
     ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".wsf", ".hta", ".msi", ".msp",
     ".lnk", ".reg", ".scr", ".com", ".pif",
 })
+# Explicitly protect community/user assets and screenshots. The updater
+# may replace only launcher-owned branding resources; never assets/mods/.
+_OFFICIAL_ASSETS = frozenset({
+    "assets/fondo.png",
+    "assets/icons/cfr_icon.png",
+    "assets/icons/cfr_icon.ico",
+    "assets/art/kart_sketch_icon.png",
+})
 _HEADER = {
     "Accept": "application/vnd.github+json",
-    "User-Agent": "CrashForgeLauncher/0.3.28",
+    "User-Agent": "CrashForgeLauncher/0.3.29",
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
@@ -246,6 +254,13 @@ def _safe_member(name, is_dir):
         raise LauncherUpdateError("Launcher archive includes non-distributable content: " + first)
     if (first not in ("assets", "_internal") and len(parts) != 1):
         raise LauncherUpdateError("Unexpected release folder layout")
+    if first == "assets":
+        canonical = "/".join(parts).lower()
+        if is_dir:
+            if not any(asset.startswith(canonical + "/") for asset in _OFFICIAL_ASSETS):
+                raise LauncherUpdateError("Release contains an unknown assets directory")
+        elif canonical not in _OFFICIAL_ASSETS:
+            raise LauncherUpdateError("Release would overwrite personal game/mod assets: " + name)
     if not is_dir and Path(name).suffix.lower() in _FORBIDDEN_SUFFIXES:
         raise LauncherUpdateError("Launcher ZIP includes a forbidden script/file")
     if not is_dir and name.lower() == "forge_online_config.json":
@@ -404,9 +419,31 @@ def stage_release(release, current_version, progress=None, root=None):
             shutil.rmtree(temp, ignore_errors=True)
 
 
-def launch_update_after_exit(app_dir, current_pid, root=None):
-    """Spawn an updater copy that waits until the current GUI process exits."""
-    if not is_portable_build():
+def portable_target_for_source(source_dir, root=None):
+    """Choose a separate EXE installation; never overwrite the .bat sources.
+
+    Existing neighboring public portable installs take priority, otherwise a
+    private LOCALAPPDATA app folder becomes the safe first-time destination.
+    """
+    source = Path(source_dir).resolve()
+    neighboring = source.parent / "Crash Forge Launcher App"
+    if ((neighboring / APP_EXE).is_file()
+            and (neighboring / UPDATER_EXE).is_file()):
+        return neighboring.resolve()
+    root = Path(root) if root is not None else state_root()
+    return (root.parent / "app").resolve()
+
+
+def launch_update_after_exit(app_dir, current_pid, root=None,
+                             source_migration=False, source_dir=None):
+
+    """Apply the verified ZIP on exit, then restart the updated Windows EXE.
+
+    The one-time .bat migration never touches its Python/source directory.
+    It runs the SHA-256 verified NEW updater from staging in LOCALAPPDATA,
+    allowing v0.3.28 source users to gain restart support during migration.
+    """
+    if not is_portable_build() and not source_migration:
         return False
     root = Path(root) if root is not None else state_root()
     pending = pending_update(root)
@@ -414,19 +451,46 @@ def launch_update_after_exit(app_dir, current_pid, root=None):
                                        read_local_version(app_dir)):
         return False
     app_dir = Path(app_dir).resolve()
-    updater = app_dir / UPDATER_EXE
-    if not updater.is_file() or not (app_dir / APP_EXE).is_file():
-        raise LauncherUpdateError("Launcher updater EXE was not installed in the portable package")
+    staging = Path(pending["payload"]).resolve()
+    trusted_updater = staging / UPDATER_EXE
+    if not trusted_updater.is_file():
+        raise LauncherUpdateError("Verified release has no independent updater EXE.")
+    # Existing portable builds use their installed trusted helper; the new
+    # staged helper is needed for .bat -> .exe migration and self-restart.
+    installed_updater = app_dir / UPDATER_EXE
+    bootstrapping = not (app_dir / APP_EXE).is_file()
+    if source_migration:
+        updater = trusted_updater
+        if source_dir is None or not (Path(source_dir) / "launcher.py").is_file():
+            raise LauncherUpdateError("Missing developer source directory for EXE migration.")
+        source = Path(source_dir).resolve()
+        if app_dir == source or _inside(source, app_dir):
+            raise LauncherUpdateError("Cannot install EXE into the developer source directory.")
+        if bootstrapping and app_dir != (root.parent / "app").resolve():
+            raise LauncherUpdateError("Fresh EXE install must use LOCALAPPDATA/CrashForgeLauncher/app.")
+    else:
+        updater = installed_updater
+        if not installed_updater.is_file() or bootstrapping:
+            raise LauncherUpdateError("An installed portable updater is required.")
     root.mkdir(parents=True, exist_ok=True)
     copied = root / "apply-launcher-update.exe"
+    # Different releases must not corrupt an updater already in flight.
+    # The PID-specific name also lets Windows release the copied file later.
+    copied = root / ("apply-launcher-update-" + str(int(current_pid)) + ".exe")
     shutil.copy2(updater, copied)
-    flags = (subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-    subprocess.Popen([
+    command = [
         str(copied), "--apply", "--pid", str(int(current_pid)),
         "--app-dir", str(app_dir), "--stage", pending["payload"],
-        "--manifest", pending["manifest"],
-        "--state-dir", str(root),
-    ], close_fds=True, creationflags=flags,
-       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-       stderr=subprocess.DEVNULL)
+        "--manifest", pending["manifest"], "--state-dir", str(root),
+    ]
+    if source_migration:
+        command.extend(["--source-dir", str(Path(source_dir).resolve())])
+        if bootstrapping:
+            command.append("--allow-fresh")
+    flags = (subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    subprocess.Popen(
+        command, close_fds=True, creationflags=flags,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     return True

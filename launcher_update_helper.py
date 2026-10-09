@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -55,14 +56,18 @@ def _sha_file(path):
     return digest.hexdigest()
 
 
-def validate_staged(app_dir, payload, manifest_path, state_dir):
+def validate_staged(app_dir, payload, manifest_path, state_dir, allow_fresh=False):
     """Rehash ALL files; never trust mutable staging metadata or remote paths."""
     root = Path(state_dir).resolve()
     stage = Path(payload).resolve()
     manifest_path = Path(manifest_path).resolve()
     dest = Path(app_dir).resolve()
-    if not dest.is_dir() or not (dest / updates.APP_EXE).is_file():
-        raise UpdateApplyError("Only an installed portable launcher can be updated")
+    installed = dest.is_dir() and (dest / updates.APP_EXE).is_file()
+    if not installed:
+        if not allow_fresh or dest != (root.parent / "app").resolve():
+            raise UpdateApplyError("Only an installed portable launcher can be updated")
+        if dest.exists() and (not dest.is_dir() or any(dest.iterdir())):
+            raise UpdateApplyError("The first-install directory must be empty")
     if not updates._inside(root / "stage", stage):
         raise UpdateApplyError("Update is not staged in the expected LOCALAPPDATA folder")
     if not updates._inside(root / "stage", manifest_path):
@@ -126,15 +131,18 @@ def validate_staged(app_dir, payload, manifest_path, state_dir):
     return version,validated
 
 
-def apply_update(app_dir, payload, manifest_path, state_dir):
-    """Apply only allowlisted verified files, preserving user files and backups.
+def apply_update(app_dir, payload, manifest_path, state_dir, allow_fresh=False):
+    """Apply verified files. Source migration uses a clean EXE-only target.
 
     No user settings, catalogs, mods, game files or personal project folders
     are included in the allowlist; existing forge_online_config.json is kept.
     """
     target=Path(app_dir).resolve()
     root=Path(state_dir).resolve()
-    version,entries=validate_staged(target,payload,manifest_path,root)
+    version,entries=validate_staged(target,payload,manifest_path,root,
+                                     allow_fresh=allow_fresh)
+    if allow_fresh and not target.exists():
+        target.mkdir(parents=True,exist_ok=False)
     root.mkdir(parents=True,exist_ok=True)
     old_version=updates.read_local_version(target)
     backup=root/"backups"/(
@@ -209,6 +217,70 @@ def apply_update(app_dir, payload, manifest_path, state_dir):
             "files":len(entries),"backup":str(backup)}
 
 
+def migrate_source_preferences(source_dir, app_dir):
+    """Preserve source-launcher preferences during the one-time .bat -> EXE move.
+
+    Only known local JSON configuration files are copied, and only if the
+    portable installation has not already created its own user settings.
+    Never modifies the original source or its game/mod files.
+    """
+    source = Path(source_dir).resolve()
+    target = Path(app_dir).resolve()
+    if source == target or updates._inside(source, target):
+        raise UpdateApplyError("A source migration cannot target the developer directory")
+    if not (source / "launcher.py").is_file():
+        raise UpdateApplyError("Cannot verify original developer launcher folder")
+    copied = []
+    for filename, limit in (
+        ("launcher_settings.json", 65536),
+        ("installed_mods.json", 1048576),
+        ("community_catalog.json", 2097152),
+    ):
+        origin = source / filename
+        dest = target / filename
+        if not origin.is_file() or dest.exists() or origin.is_symlink():
+            continue
+        if origin.stat().st_size > limit:
+            continue
+        try:
+            data = json.loads(origin.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        temporary = target / (filename + ".migrate.tmp")
+        try:
+            temporary.write_text(json.dumps(data, indent=2,
+                                            ensure_ascii=False), encoding="utf-8")
+            os.replace(temporary, dest)
+            copied.append(filename)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return copied
+
+
+def relaunch_updated_exe(app_dir):
+    """Start the new Windows GUI EXE, never Python, a BAT or a console shell."""
+    executable = (Path(app_dir).resolve() / updates.APP_EXE)
+    if not executable.is_file():
+        raise UpdateApplyError("Updated Windows launcher executable was not installed")
+    flags = 0
+    if os.name == "nt":
+        flags = (subprocess.CREATE_NO_WINDOW |
+                 subprocess.DETACHED_PROCESS |
+                 subprocess.CREATE_NEW_PROCESS_GROUP)
+    process = subprocess.Popen(
+        [str(executable)], cwd=str(executable.parent),
+        creationflags=flags, close_fds=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return process.pid
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument("--apply",action="store_true",required=True)
@@ -217,14 +289,39 @@ def main(argv=None):
     parser.add_argument("--stage",required=True)
     parser.add_argument("--manifest",required=True)
     parser.add_argument("--state-dir",required=True)
+    parser.add_argument("--source-dir",help="One-time source .bat to portable EXE migration")
+    parser.add_argument("--allow-fresh",action="store_true",
+                        help="Allow initial LOCALAPPDATA/CrashForgeLauncher/app install")
+    # The isolated CLI smoke test uses dummy EXEs. Production never disables
+    # restarting the updated GUI after a successful application.
+    parser.add_argument("--no-restart",action="store_true")
     args=parser.parse_args(argv)
     state=Path(args.state_dir)
     log=state/"updater-result.txt"
     try:
+        if args.allow_fresh and not args.source_dir:
+            raise UpdateApplyError("Fresh installation requires a verified developer source")
+        if args.source_dir and not (Path(args.source_dir) / "launcher.py").is_file():
+            raise UpdateApplyError("Cannot verify the developer launcher directory")
         _wait_for_process_exit(args.pid)
-        result=apply_update(args.app_dir,args.stage,args.manifest,args.state_dir)
+        result=apply_update(args.app_dir,args.stage,args.manifest,args.state_dir,
+                            allow_fresh=args.allow_fresh)
+        moved=[]
+        if args.source_dir:
+            moved=migrate_source_preferences(args.source_dir,args.app_dir)
         outcome="SUCCESS v"+result["old_version"]+" -> v"+result["version"]
+        if moved:
+            outcome+="; migrated settings: "+", ".join(moved)
         code=0
+        if args.no_restart:
+            outcome += " (relaunch skipped only in isolated smoke test)"
+        else:
+            try:
+                pid=relaunch_updated_exe(args.app_dir)
+                outcome += " - restarted updated EXE, PID="+str(pid)
+            except Exception as restart_error:
+                outcome += " - relaunch FAILED: "+str(restart_error)[:280]
+                code=3
     except Exception as exc:
         outcome="FAILED: "+str(exc)[:400]
         code=2

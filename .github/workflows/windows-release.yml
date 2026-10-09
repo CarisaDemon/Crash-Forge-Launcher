@@ -82,7 +82,7 @@ jobs:
           tag_name: ${{ steps.release_version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: Crash Forge Racing Launcher ${{ steps.release_version.outputs.tag }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           prerelease: false
           files: |
             build/release/Crash-Forge-Launcher-Windows.zip

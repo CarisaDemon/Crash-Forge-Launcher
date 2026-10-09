@@ -1,5 +1,16 @@
 Crash Forge: Racing Launcher
 
+v0.3.29
+- Verified the portable Windows EXE and standalone updater use Windows GUI subsystem, with no command console.
+- Improved self-update ZIP validation: only official launcher-owned artwork can be overwritten, never assets/mods or custom screenshots.
+- After verified update finishes on exit, the standalone updater now automatically restarts the NEW GUI CrashForgeLauncher.exe with no console window.
+- Developer .bat launchers can migrate after a verified new release into a separate portable Windows EXE installation, preserving local settings and keeping all source scripts untouched.
+- Settings offers RESTART & UPDATE TO EXE when an update is verified; no automatic forced exit during use.
+- Kept launcher/game updates independent, with SHA-256, staged download, apply on exit, backups and rollback.
+- Added concise English release notes for the public v0.3.29 GitHub Release.
+- Added additional regression coverage for launcher self-updates from a prior build and blocked user-created assets.
+- Auto-updater is enabled by default with an off switch in Settings; it never interrupts gameplay or modifies a running launcher.
+
 v0.3.28
 - Separate automatic updates for the launcher through CarisaDemon/Crash-Forge-Launcher, independent of Windows game releases.
 - Launcher updates are checked in the background, downloaded with mandatory SHA-256, and applied after closing via a separate updater with backups and rollback.

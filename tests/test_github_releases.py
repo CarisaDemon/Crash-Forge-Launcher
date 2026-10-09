@@ -1,4 +1,4 @@
-"""No game or browser launch. Fake GitHub downloads operate only on temp files."""
+﻿"""No game or browser launch. Fake GitHub downloads operate only on temp files."""
 import hashlib
 import io
 import json

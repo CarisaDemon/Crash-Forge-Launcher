@@ -1,4 +1,4 @@
-"""Windows launcher self-update tests: isolated fake packages, zero game mutations."""
+﻿"""Windows launcher self-update tests: isolated fake packages, zero game mutations."""
 import hashlib
 import io
 import json
@@ -97,6 +97,123 @@ class SelfUpdateTests(unittest.TestCase):
                 (digest+"  "+lu.ZIP_NAME+"\n").encode())):
             self.assertEqual(lu.expected_digest(release),digest)
 
+    def test_restart_only_verified_new_exe_and_no_console(self):
+        import launcher_update_helper as helper
+        with tempfile.TemporaryDirectory() as temp:
+            app=Path(temp)
+            exe=app/lu.APP_EXE
+            exe.write_bytes(b"simulated verified GUI executable")
+            with patch.object(helper.subprocess,"Popen") as launch:
+                helper.relaunch_updated_exe(str(app))
+            launch.assert_called_once()
+            args, kwargs = launch.call_args
+            self.assertEqual(args[0], [str(exe.resolve())])
+            self.assertEqual(kwargs["cwd"],str(app.resolve()))
+            self.assertEqual(kwargs["creationflags"],
+                             helper.subprocess.CREATE_NO_WINDOW |
+                             helper.subprocess.DETACHED_PROCESS |
+                             helper.subprocess.CREATE_NEW_PROCESS_GROUP)
+            self.assertTrue(kwargs["close_fds"])
+            exe.unlink()
+            with patch.object(helper.subprocess,"Popen") as launch:
+                with self.assertRaisesRegex(helper.UpdateApplyError,"not installed"):
+                    helper.relaunch_updated_exe(str(app))
+                launch.assert_not_called()
+
+    def test_update_helper_restarts_only_after_success(self):
+        import launcher_update_helper as helper
+        with tempfile.TemporaryDirectory() as temp:
+            state=Path(temp)
+            parameters=[
+                "--apply","--pid","123",
+                "--app-dir",str(state/"app"),
+                "--stage",str(state/"staged"),
+                "--manifest",str(state/"manifest.json"),
+                "--state-dir",str(state),
+            ]
+            successful={"old_version":"0.3.28","version":"0.3.29","files":3}
+            with patch.object(helper,"_wait_for_process_exit") as wait, \
+                 patch.object(helper,"apply_update",return_value=successful), \
+                 patch.object(helper,"relaunch_updated_exe",return_value=7654) as restart:
+                self.assertEqual(helper.main(parameters),0)
+                wait.assert_called_once_with(123)
+                restart.assert_called_once_with(str(state/"app"))
+                self.assertIn("restarted updated EXE, PID=7654",
+                              (state/"updater-result.txt").read_text())
+            with patch.object(helper,"_wait_for_process_exit"), \
+                 patch.object(helper,"apply_update",side_effect=OSError("locked file")), \
+                 patch.object(helper,"relaunch_updated_exe",return_value=7654) as restart:
+                self.assertEqual(helper.main(parameters),2)
+                restart.assert_not_called()
+                self.assertIn("FAILED", (state/"updater-result.txt").read_text())
+
+    def test_source_bat_migrates_to_separate_exe_without_touching_sources(self):
+        import launcher_update_helper as helper
+        version="0.3.29"
+        binary=make_archive({
+            "CrashForgeLauncher.exe":b"new standalone GUI",
+            "ForgeLauncherUpdater.exe":b"new updater GUI",
+            "launcher_version.txt":b"0.3.29\n",
+            "assets/Fondo.png":b"official cover",
+        })
+        with tempfile.TemporaryDirectory() as td:
+            parent=Path(td)
+            dev=parent/"workspace"/"Crash Forge Launcher"
+            dev.mkdir(parents=True)
+            (dev/"launcher.py").write_text("SOURCE: NEVER REPLACE",encoding="utf-8")
+            (dev/"launcher_settings.json").write_text(
+                '{"game_install_path":"C:/Games/CTR","launcher_auto_update":true}',
+                encoding="utf-8")
+            state=parent/"user"/"CrashForgeLauncher"/"updates"
+            target=lu.portable_target_for_source(dev,root=state)
+            self.assertEqual(target,(state.parent/"app").resolve())
+            with patch.object(lu,"_read_download",
+                              side_effect=lambda *_a,**_k:MockDownload(binary)):
+                pending=lu.stage_release(sample_release(binary),"0.0.0",root=state)
+            with patch.object(lu.subprocess,"Popen") as spawn:
+                self.assertTrue(lu.launch_update_after_exit(
+                    target,43210,root=state,source_migration=True,
+                    source_dir=dev))
+                arguments=spawn.call_args.args[0]
+            self.assertIn("--source-dir",arguments)
+            self.assertIn("--allow-fresh",arguments)
+            self.assertIn(str(dev.resolve()),arguments)
+            self.assertEqual(arguments[0],str(state/"apply-launcher-update-43210.exe"))
+            result=helper.apply_update(target,pending["payload"],
+                                       pending["manifest"],state,allow_fresh=True)
+            copied=helper.migrate_source_preferences(dev,target)
+            self.assertEqual(result["version"],version)
+            self.assertIn("launcher_settings.json",copied)
+            self.assertEqual(
+                json.loads((target/"launcher_settings.json").read_text())
+                ["game_install_path"],"C:/Games/CTR")
+            self.assertEqual((dev/"launcher.py").read_text(),
+                             "SOURCE: NEVER REPLACE")
+            self.assertEqual((target/"CrashForgeLauncher.exe").read_bytes(),
+                             b"new standalone GUI")
+            with patch.object(helper.subprocess,"Popen") as spawn:
+                self.assertEqual(helper.relaunch_updated_exe(target),spawn.return_value.pid)
+                self.assertEqual(spawn.call_args.args[0],
+                                 [str((target/"CrashForgeLauncher.exe").resolve())])
+            self.assertNotIn("launcher_version.txt",[x.name for x in dev.iterdir()])
+            print("PASS .bat source stays intact; new EXE installed, prefs migrated and restarted")
+
+    def test_fresh_migration_never_uses_untrusted_directory(self):
+        import launcher_update_helper as helper
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)
+            state=path/"updates"
+            state.mkdir()
+            # A normal installed directory cannot be bootstrapped without
+            # a real existing portable EXE and verified release.
+            target=path/"somebody-elses-files"
+            target.mkdir()
+            (target/"documents.txt").write_text("private")
+            with self.assertRaises(helper.UpdateApplyError):
+                helper.validate_staged(target,path/"fake-payload",
+                                       path/"manifest.json",state,allow_fresh=True)
+            self.assertEqual((target/"documents.txt").read_text(),"private")
+
     def test_stage_apply_preserves_personal_data_and_backup(self):
         version="0.3.29"
         binary=make_archive({
@@ -154,6 +271,14 @@ class SelfUpdateTests(unittest.TestCase):
           {"CrashForgeLauncher.exe":b"new",
            "ForgeLauncherUpdater.exe":b"updater",
            "launcher_version.txt":b"not-the-tag"},
+          {"CrashForgeLauncher.exe":b"new",
+           "ForgeLauncherUpdater.exe":b"updater",
+           "launcher_version.txt":b"0.3.29",
+           "assets/mods/wheels/private.ini":b"must not overwrite mods"},
+          {"CrashForgeLauncher.exe":b"new",
+           "ForgeLauncherUpdater.exe":b"updater",
+           "launcher_version.txt":b"0.3.29",
+           "assets/screenshot-private.png":b"must not overwrite screenshots"},
         ]
         with tempfile.TemporaryDirectory() as td:
             app=Path(td)/"app"

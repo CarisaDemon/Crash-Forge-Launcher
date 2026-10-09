@@ -20,7 +20,7 @@ This repository is exclusively for the **launcher application**, not game binari
 
 - The packaged launcher checks its own GitHub Releases automatically (at startup and about every six hours while open).
 - If a newer stable launcher ZIP with a valid SHA-256 exists, the launcher downloads and verifies it in the background.
-- The update is staged without touching the running app. The separate updater applies it **after you close the launcher**, so the updated version is ready next time you open it.
+- The update is staged without touching the running app. The separate updater applies it **after you close the launcher**, and **reopens the updated `CrashForgeLauncher.exe` automatically**, without a console. The initial v0.3.28 release requires a one-time helper bootstrap for automatic restart on its first upgrade; without this bootstrap, users reopen the app once after moving to v0.3.29.
 - Older launcher files are backed up, with a rollback attempt if replacement fails.
 - Auto-update is enabled by default, with an **AUTO-UPDATE LAUNCHER** switch and a manual CHECK button in Settings.
 - The Python development source deliberately never self-modifies.

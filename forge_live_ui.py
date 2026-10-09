@@ -294,13 +294,15 @@ class ForgeLiveMixin:
                 self._launcher_update_retry_after = 0
                 if pending and self.launcher_auto_update:
                     self.launcher_update_ready = pending
-                    result = "Launcher v" + pending["version"] + \
-                             " downloaded and verified; applies automatically on exit."
+                    self._set_restart_buttons_enabled(True)
+                    result = ("Launcher v" + pending["version"] +
+                              " verified; the updated EXE will open automatically " +
+                              "after you close this launcher.")
                 elif release and launcher_updates.newer_release(release, installed):
                     result = ("Launcher v" + release["version"] +
                               " available. " +
                               ("Auto-update disabled." if not self.launcher_auto_update else
-                               "Source development copy: update disabled for safety."
+                               "Portable EXE migration available; activate auto-update."
                                if not portable else
                                "Download is waiting for the next auto-check."))
                 elif not release:
@@ -433,15 +435,21 @@ class ForgeLiveMixin:
 
     def _startup_launcher_update_check(self):
         """Launcher code uses its OWN GitHub repo, not game release tags."""
-        if self.launcher_auto_update and launcher_updates.is_portable_build():
+        if self.launcher_auto_update:
             pending = launcher_updates.pending_update()
+            if launcher_updates.is_portable_build():
+                version_dir = self._forge_base_dir()
+            else:
+                version_dir = launcher_updates.portable_target_for_source(
+                    self._forge_base_dir())
             if pending and launcher_updates.newer_release(
                     {"version": pending["version"]},
-                    launcher_updates.read_local_version(self._forge_base_dir())):
+                    launcher_updates.read_local_version(version_dir)):
                 self.launcher_update_ready = pending
+                self._set_restart_buttons_enabled(True)
                 self.launcher_update_status_var.set(
-                    "Launcher v" + pending["version"] +
-                    " verified; automatically applies when you close this window.")
+                    ("Launcher v" + pending["version"] +
+                     " verified; when you close, the updated EXE will open automatically."))
                 return
         self._request_launcher_update_check(manual=False)
 
@@ -466,18 +474,21 @@ class ForgeLiveMixin:
         self.launcher_update_busy = True
         self.launcher_update_status_var.set(
             "Checking the official Crash Forge Launcher repository...")
-        installed = launcher_updates.read_local_version(self._forge_base_dir())
-        auto = bool(self.launcher_auto_update)
         portable = launcher_updates.is_portable_build()
+        install_dir = (self._forge_base_dir() if portable else
+                       launcher_updates.portable_target_for_source(
+                           self._forge_base_dir()))
+        installed = launcher_updates.read_local_version(install_dir)
+        auto = bool(self.launcher_auto_update)
 
         def worker():
             try:
                 release = launcher_updates.fetch_latest()
                 pending = None
                 if release and launcher_updates.newer_release(release, installed):
-                    # Never overwrite a development checkout/source launcher.
-                    # Portable copies stage verified updates automatically.
-                    if auto and portable:
+                    # In source/.bat mode this stages a SEPARATE portable
+                    # installation. It never overwrites .py, .bat or source assets.
+                    if auto:
                         def report(phase, done, total):
                             self.online_queue.put(
                                 ("launcher_update_progress",

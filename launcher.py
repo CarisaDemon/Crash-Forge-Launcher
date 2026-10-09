@@ -788,7 +788,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         settings_expanded = (
             (tabbed and self._active_dashboard_tab == "SETTINGS") or
             (not tabbed and self._settings_user_expanded is not False))
-        settings_height = 335 if short else (346 if compact else 354)
+        settings_height = 367 if short else (378 if compact else 390)
 
         try:
             self._sync_dashboard_layout(tabbed)
@@ -827,7 +827,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 self.status_label.pack_configure(padx=side_pad + 2)
 
             self.settings_panel.configure(
-                height=(max(340, settings_height)
+                height=(max(375, settings_height)
                         if tabbed and self._active_dashboard_tab == "SETTINGS"
                         else settings_height if settings_expanded else 42))
             if settings_expanded:
@@ -1028,7 +1028,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                         self.winfo_screenheight())
         left, top, work_w, work_h = workarea
         w = min(570, max(400, work_w - 40))
-        h = min(485, max(285, work_h - 40))
+        h = min(520, max(300, work_h - 40))
         x = min(max(left, self.winfo_rootx() + (self.winfo_width() - w) // 2),
                 left + work_w - w)
         y = min(max(top, self.winfo_rooty() + (self.winfo_height() - h) // 2),
@@ -2878,11 +2878,49 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             font=("Bahnschrift", 8), anchor="w",
             justify="left", wraplength=465 if compact else 275,
         ).pack(fill="x", pady=(3, 0))
+        restart = tk.Button(
+            parent, text="RESTART & UPDATE TO EXE", cursor="hand2",
+            command=self._restart_into_updated_launcher,
+            bg="#4F270F", fg="#FFE6CC", relief="flat",
+            font=("Bahnschrift SemiBold", 8),
+            padx=9, pady=5,
+            state="normal" if getattr(self, "launcher_update_ready", None) else "disabled",
+        )
+        restart.pack(fill="x", pady=(4, 0))
+        buttons = getattr(self, "_launcher_restart_buttons", None)
+        if buttons is None:
+            self._launcher_restart_buttons = []
+        self._launcher_restart_buttons.append(restart)
         return panel
+
+    def _set_restart_buttons_enabled(self, enabled):
+        for button in getattr(self, "_launcher_restart_buttons", []):
+            try:
+                if button.winfo_exists():
+                    button.configure(state="normal" if enabled else "disabled")
+            except tk.TclError:
+                pass
+
+    def _restart_into_updated_launcher(self):
+        """User action: close gracefully, then start the new GUI EXE."""
+        if not getattr(self, "launcher_update_ready", None):
+            return
+        if getattr(self, "game_update_busy", False) or getattr(self, "mod_download_busy", False):
+            self.launcher_update_status_var.set(
+                "Wait for the active transfer before restarting.")
+            return
+        if not getattr(self, "launcher_auto_update", True):
+            self.launcher_update_status_var.set(
+                "Enable launcher auto-update before restarting.")
+            return
+        self.destroy()
 
     def _toggle_launcher_auto_update(self):
         self.launcher_auto_update = bool(self.launcher_auto_update_var.get())
         self._save_launcher_settings()
+        self._set_restart_buttons_enabled(
+            self.launcher_auto_update and
+            bool(getattr(self, "launcher_update_ready", None)))
         self.launcher_update_status_var.set(
             "Auto-update enabled: applies after closing the launcher."
             if self.launcher_auto_update else
@@ -4345,20 +4383,24 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         )
 
     def destroy(self):
-        """Apply verified portable-launcher updates only AFTER the GUI exits.
+        """Apply a verified EXE update only after this window closes.
 
-        The separate updater is copied to LOCALAPPDATA so it can safely
-        replace the running launcher executable when Windows releases it.
-        Source/developer copies never self-modify on close.
+        Portable users are updated in place; developer/.bat users get a
+        SEPARATE portable EXE. In both cases the updater relaunches the new
+        graphical EXE without invoking cmd.exe, a BAT or the Python console.
         """
         if not getattr(self, "_launcher_shutdown_started", False):
             self._launcher_shutdown_started = True
             if (getattr(self, "launcher_auto_update", False)
-                    and getattr(self, "launcher_update_ready", None)
-                    and launcher_updates.is_portable_build()):
+                    and getattr(self, "launcher_update_ready", None)):
                 try:
+                    portable = launcher_updates.is_portable_build()
+                    target = (BASE_DIR if portable else
+                              launcher_updates.portable_target_for_source(BASE_DIR))
                     launcher_updates.launch_update_after_exit(
-                        BASE_DIR, os.getpid())
+                        target, os.getpid(),
+                        source_migration=not portable,
+                        source_dir=None if portable else BASE_DIR)
                 except Exception as exc:
                     try:
                         state = launcher_updates.state_root()
