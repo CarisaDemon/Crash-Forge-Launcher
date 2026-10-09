@@ -178,25 +178,95 @@ class ForgeLiveMixin:
         return result
 
     def _render_real_news(self):
+        """Large top-story artwork and concise, readable release notes."""
         if not hasattr(self, "news_rows"):
             return
         for child in self.news_rows.winfo_children():
             child.destroy()
         from tkinter import Frame, Label
-        items = (self.github_release_news +
-                 (self.remote_news if self.remote_news else self._live_news_fallback()))[:3]
-        for item in items:
-            row = Frame(self.news_rows, bg="#111419")
-            row.pack(fill="x", pady=(0, 6))
+        version, notes = services.real_launcher_changelog(
+            self._forge_base_dir(), limit=4)
+        headline = {
+            "category": "LATEST LAUNCHER UPDATE",
+            "title": "Crash Forge Launcher " + (version or ""),
+            "date": "",
+            "description": "\\n".join("- " + str(line) for line in notes[:3])
+                if notes else "Latest launcher changes and tools.",
+        }
+        items = [headline] + (self.github_release_news +
+                 (self.remote_news if self.remote_news else
+                  self._live_news_fallback()[1:]))[:2]
+        for index, item in enumerate(items):
+            row = Frame(self.news_rows, bg="#111419",
+                        highlightbackground="#30363E", highlightthickness=1)
+            row.pack(fill="x", pady=(0, 8), padx=1)
+            if index == 0:
+                banner = __import__("tkinter").Canvas(
+                    row, height=174, bg="#111419", bd=0, highlightthickness=0)
+                banner.pack(fill="x")
+                image_path = os.path.join(self._forge_base_dir(),
+                                          "assets", "Fondo.png")
+
+                def paint_banner(event=None, canvas=banner, image_file=image_path):
+                    width = max(240, canvas.winfo_width())
+                    height = 174
+                    canvas.delete("all")
+                    if os.path.isfile(image_file):
+                        try:
+                            from PIL import Image, ImageTk, ImageOps, ImageEnhance
+                            picture = Image.open(image_file).convert("RGB")
+                            picture = ImageOps.fit(
+                                picture, (width, height),
+                                method=Image.Resampling.LANCZOS)
+                            picture = ImageEnhance.Brightness(picture).enhance(0.56)
+                            self._news_hero_photo = ImageTk.PhotoImage(picture)
+                            canvas.create_image(0, 0, image=self._news_hero_photo,
+                                                anchor="nw")
+                        except Exception:
+                            canvas.create_rectangle(0, 0, width, height,
+                                fill="#17191d", outline="")
+                    else:
+                        canvas.create_rectangle(0, 0, width, height,
+                                                fill="#17191d", outline="")
+                    canvas.create_rectangle(0, 0, 5, height,
+                                            fill="#ff6a00", outline="")
+                    canvas.create_text(20, 24, text="CRASH FORGE  /  UPDATE",
+                                       fill="#ff9b53", anchor="w",
+                                       font=("Bahnschrift SemiBold", 10))
+                    canvas.create_text(20, height-41,
+                                       text=("LAUNCHER  " + (version or "NEW")),
+                                       fill="#f4f4f1", anchor="w",
+                                       font=("Bahnschrift SemiBold", 16))
+                    canvas.create_text(20, height-19,
+                                       text="LATEST CHANGES  +  NEW TOOLS",
+                                       fill="#bdc4cd", anchor="w",
+                                       font=("Bahnschrift", 8))
+                banner.bind("<Configure>", paint_banner)
+                body = Frame(row, bg="#111419")
+                body.pack(fill="x", padx=12, pady=(9, 12))
+                Label(body, text=item["title"], bg="#111419",
+                      fg="#f5f5f0", font=("Bahnschrift SemiBold", 10),
+                      anchor="w", wraplength=380, justify="left").pack(
+                          anchor="w", pady=(0, 5))
+                Label(body, text=item["description"].replace("\\n", "\n"),
+                      bg="#111419", fg="#b8bfc6",
+                      font=("Bahnschrift", 9), anchor="w",
+                      wraplength=400, justify="left").pack(fill="x", anchor="w")
+                continue
             body = Frame(row, bg="#111419")
             body.pack(side="left", fill="both", expand=True, padx=9, pady=7)
             category = str(item.get("category") or "NEWS").upper()
-            title = str(item.get("title") or "")[:70]
-            Label(body, text=category, bg="#111419", fg="#E2A36A",
+            title = str(item.get("title") or "")[:90]
+            Label(body, text=category, bg="#111419", fg="#e2a36a",
                   font=("Bahnschrift SemiBold", 7), anchor="w").pack(anchor="w")
-            Label(body, text=title, bg="#111419", fg="#E5E5E1",
+            Label(body, text=title, bg="#111419", fg="#e5e5e1",
                   font=("Bahnschrift SemiBold", 9), anchor="w",
                   wraplength=310, justify="left").pack(anchor="w")
+            description = str(item.get("description") or "")[:300]
+            if description:
+                Label(body, text=description, bg="#111419", fg="#9aa2aa",
+                      font=("Bahnschrift", 8), wraplength=320,
+                      justify="left", anchor="w").pack(anchor="w", pady=(4, 0))
             when = str(item.get("date") or "").strip()
             if when:
                 Label(row, text=when, bg="#111419", fg="#858990",

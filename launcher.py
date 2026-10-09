@@ -1748,12 +1748,19 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     CSEQ_TOOL_PATH or os.path.join(
                         self.game_install_path, "tools", "cfr_midi_tool", "run_tool.bat")),
         )
+        model_tool = os.path.join(BASE_DIR, "_internal", "editor_tools",
+                                  "CrashForgeModelImporter.exe")
+        if not os.path.isfile(model_tool) and not getattr(sys, "frozen", False):
+            model_tool = os.path.abspath(os.path.join(
+                BASE_DIR, "..", "Crash Forge Character Tool",
+                "Open Crash Forge Character Tool.bat"))
         make_tool_card(
             2,
             "MODEL IMPORTER",
             "CHARACTERS / KARTS",
-            "Model workflow will be linked here after the importer is ready.",
-            disabled=True,
+            "Import racers and manage kart colors with one OBJ per model.",
+            action=(lambda: self._launch_editor_tool(model_tool)),
+            disabled=not os.path.isfile(model_tool),
         )
 
         self._editor_status_label = tk.Label(

@@ -65,6 +65,12 @@ def main():
     assert result.returncode==0,(
         "Packaged launcher failed background smoke: "+result.stderr[-1500:])
     print("PASS packaged launcher EXE self-test without showing window")
+    model_importer = PORTABLE/"_internal"/"editor_tools"/"CrashForgeModelImporter.exe"
+    assert model_importer.is_file(), "Bundled Model Importer is missing"
+    assert_windows_gui_subsystem(model_importer)
+    result = no_window_run([str(model_importer), "--self-test"], timeout=55)
+    assert result.returncode == 0, "Bundled Model Importer failed headless self-test"
+    print("PASS bundled Model Importer v1.6 self-test (no window)")
 
     binary=release_zip()
     expected=hashlib.sha256(binary).hexdigest()

@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.32
+- Bundle Model Importer v1.6 as an independently launched Windows EXE within the signed-checksum launcher ZIP.
+- Enable EDITOR > MODEL IMPORTER to open the bundled tool for racer assets and one-OBJ kart color variants.
+- Keep Blue as the original MTL atlas; install other colors without duplicating model data.
+- Show an expanded NEWS cover with garage artwork and short update highlights.
+- Deliver future bundled editor revisions through the existing launcher auto-updater, backups and automatic EXE relaunch.
+
 v0.3.31
 - Enable Modpack listings in Forge Hub, including independent native mod IDs and INIs by category.
 - Install verified Modpack ZIPs to racers, karts, wheels and tracks with existing-mod backups and rollback.
