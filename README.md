@@ -29,6 +29,8 @@ This repository is exclusively for the **launcher application**, not game binari
 
 When a game executable is detected, the launcher displays **PLAY** and **100% installed**. With no game installed, PLAY becomes **INSTALL** and stays disabled until an official verified stable Windows game ZIP exists.
 
+**Original CTR-U disc diagnostic:** The launcher independently compares the user's local PS1 USA `assets/ctr-u.bin` against the Redump original in a background thread. A missing or different BIN logs an error only, with **no popup and no offline play restriction**. No ISO bytes or verification reports are sent online. See [ISO_INTEGRITY.md](ISO_INTEGRITY.md).
+
 ## Build Windows portable launcher
 
 Requires Windows 10/11, Python 3.12 and PowerShell. Run the following commands:

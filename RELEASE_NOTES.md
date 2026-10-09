@@ -1,9 +1,9 @@
-# Crash Forge: Racing Launcher — v0.3.29
+# Crash Forge: Racing Launcher - v0.3.31
 
-- Windows EXE with no console window.
-- Automatic launcher updates with SHA-256 verification.
-- Automatic restart as EXE after a successful update.
-- One-time migration from BAT to EXE.
-- Better protection for settings, mods and update backups.
-
-To test: Settings → CHECK → RESTART & UPDATE TO EXE.
+- NEW: Modpacks in Forge Hub. One verified ZIP can install characters, karts, wheels and tracks in their own folders, preserving each mod's .ini.
+- Modpack installs include preflight validation, backups and rollback if anything fails.
+- PLAY and GAME UPDATE have clearer orange/grey emphasis; the large UPDATE button stays under PLAY.
+- Cleaner Settings with the independent launcher auto-updater and no duplicate game-update controls.
+- Branded English PLAY ANYWAY / CANCEL warning when a newer verified game version is available.
+- Background original CTR-U (USA) file check logs results without blocking offline play.
+- Launcher updates automatically restart the updated .exe after closing the running launcher.

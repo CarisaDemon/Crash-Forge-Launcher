@@ -15,6 +15,7 @@ import urllib.request
 import urllib.parse
 import zipfile
 import forge_mod_metadata as modmeta
+import forge_modpacks
 from datetime import datetime
 
 DEFAULT_GAME_PATH = r"C:\Crash Team Racing\Crash Team Racing Compiled Custom Music"
@@ -27,7 +28,7 @@ ALLOWED_MOD_EXT = {
     ".cfg", ".json", ".txt", ".md", ".wav", ".ogg", ".cseq", ".bin",
     ".dds", ".webp", ".gif", ".xml", ".dat", ".gltf", ".glb",
 }
-MOD_FOLDERS = {"Character": "racers", "Kart": "karts", "Wheels": "wheels", "Track": "tracks"}
+MOD_FOLDERS = {"Character": "racers", "Kart": "karts", "Wheels": "wheels", "Track": "tracks", "Modpack": "modpacks"}
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -302,6 +303,8 @@ def download_install_mod(mod, game_path, progress=None):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with z.open(info, "r") as src, open(path, "wb") as target:
                     shutil.copyfileobj(src, target)
+        if kind == "Modpack":
+            return forge_modpacks.install_prepared_modpack(contents, game_path, slug)
         # Save only this mod's previous folder; leave all other mods untouched.
         if os.path.isdir(dest):
             backups = os.path.join(game_path, ".forge_mod_backups")

@@ -1,6 +1,27 @@
 Crash Forge: Racing Launcher
 
+v0.3.31
+- Enable Modpack listings in Forge Hub, including independent native mod IDs and INIs by category.
+- Install verified Modpack ZIPs to racers, karts, wheels and tracks with existing-mod backups and rollback.
+- Preserve the large GAME UPDATE button, wider Settings and branded game-version warnings from v0.3.30.
+- Include the nonblocking USA CTR-U ISO integrity checker and independent launcher EXE auto-restart.
+- Add 9 automated Modpack installation and security regression tests.
+
+v0.3.30
+- Keep the large orange/grey UPDATE button below PLAY. When a verified game update is available, UPDATE highlights orange and PLAY becomes grey but remains usable.
+- Show an English, branded steel-and-orange game-version warning with PLAY ANYWAY / CANCEL when the user plays an older installed game.
+- If the local game version cannot be verified, explain the uncertainty instead of falsely claiming it is outdated.
+- Reserve compatibility messaging for future online features; do not implement or enable online yet.
+- Remove the duplicated game-update controls from Settings, leaving launcher auto-updates and install folder options.
+- Widen the Settings panel and improve narrow/4:3 layout.
+- Preserve existing game launcher, update verification, file backups and automatic Windows EXE restart.
+
 v0.3.29
+- Add an English, industrial-style floating warning with CANCEL / PLAY ANYWAY when a newer verified game release exists; reserve compatibility messaging for future online features.
+- Keep the warning separate from the wallpaper and game launch; do not open CTR without explicit confirmation when a newer version is detected.
+- Keep the large GAME UPDATE button under PLAY, highlight it orange when an official newer release is available and grey it otherwise; PLAY uses the opposite emphasis but remains clickable.
+- Remove the duplicate GAME updates controls from Settings while preserving the independent launcher auto-updater.
+- Give the Settings panel more room and improve small-window layout.
 - Verified the portable Windows EXE and standalone updater use Windows GUI subsystem, with no command console.
 - Improved self-update ZIP validation: only official launcher-owned artwork can be overwritten, never assets/mods or custom screenshots.
 - After verified update finishes on exit, the standalone updater now automatically restarts the NEW GUI CrashForgeLauncher.exe with no console window.

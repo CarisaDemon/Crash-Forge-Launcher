@@ -126,6 +126,13 @@ class ForgeButton(tk.Canvas):
             self.configure(cursor="arrow" if disabled else "hand2")
             self.render()
 
+    def set_accent(self, enabled):
+        """Switch the existing forged orange/grey artwork, not the button itself."""
+        enabled = bool(enabled)
+        if self.accent != enabled:
+            self.accent = enabled
+            self.render()
+
     def set_ui_scale(self, scale):
         scale = max(0.50, min(1.18, float(scale)))
         if abs(scale - self.ui_scale) < 0.01:
@@ -780,7 +787,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         sidebar_width = max(205 if tabbed else 231,
                             int(round(292 * button_scale)))
         news_width = min(438, max(220, int(round(width * 0.315))))
-        right_width = min(322, max(226, int(round(width * 0.235))))
+        right_width = min(370, max(320, int(round(width * 0.245))))
 
         # Settings must be usable, not just a 42px header. In compact
         # mode it gets its own full-width tab; in three-column mode it
@@ -788,7 +795,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         settings_expanded = (
             (tabbed and self._active_dashboard_tab == "SETTINGS") or
             (not tabbed and self._settings_user_expanded is not False))
-        settings_height = 367 if short else (378 if compact else 390)
+        settings_height = 255 if short else (267 if compact else 280)
 
         try:
             self._sync_dashboard_layout(tabbed)
@@ -827,7 +834,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 self.status_label.pack_configure(padx=side_pad + 2)
 
             self.settings_panel.configure(
-                height=(max(375, settings_height)
+                height=(max(255, settings_height)
                         if tabbed and self._active_dashboard_tab == "SETTINGS"
                         else settings_height if settings_expanded else 42))
             if settings_expanded:
@@ -1028,7 +1035,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                         self.winfo_screenheight())
         left, top, work_w, work_h = workarea
         w = min(570, max(400, work_w - 40))
-        h = min(520, max(300, work_h - 40))
+        h = min(415, max(300, work_h - 40))
         x = min(max(left, self.winfo_rootx() + (self.winfo_width() - w) // 2),
                 left + work_w - w)
         y = min(max(top, self.winfo_rooty() + (self.winfo_height() - h) // 2),
@@ -1068,7 +1075,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 activeforeground="#FFFFFF", relief="flat",
                 font=("Bahnschrift SemiBold", 9), padx=12, pady=8,
             ).pack(side="left", padx=(0, 10))
-        self._add_release_settings_controls(content, compact=True)
+        # Keep GAME UPDATE on the large sidebar button. This compact page
+        # controls the LAUNCHER updater only.
         self._add_launcher_update_settings_controls(content, compact=True)
         win.protocol("WM_DELETE_WINDOW", win.destroy)
 
@@ -2796,7 +2804,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         hint.pack(fill="x", pady=(5, 0))
         self.settings_hint = hint
 
-        self._add_release_settings_controls(body)
+        # Game updates belong exclusively to the large sidebar UPDATE button.
+        # Settings is reserved for the launcher's OWN automatic updater.
         self._add_launcher_update_settings_controls(body)
         self._refresh_install_location_ui()
 
@@ -2996,6 +3005,11 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             )
         self._refresh_install_location_ui()
         self._refresh_real_install_ui()
+        # Offline BIN fingerprinting is silent and cannot prevent PLAY.
+        try:
+            iso_integrity.start_background_check(self.game_install_path, "folder_changed")
+        except Exception:
+            pass  # Silent, nonblocking offline-only diagnostics.
 
     def _open_game_location(self, event=None):
         path = getattr(
@@ -3156,7 +3170,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         ).pack(anchor="w")
         tk.Label(
             title_box,
-            text="COMMUNITY MODS  /  CHARACTERS • KARTS • WHEELS • MAPS",
+            text="COMMUNITY MODS  /  CHARACTERS • KARTS • WHEELS • MAPS • MODPACKS",
             bg="#0D0F13",
             fg=COLORS["orange"],
             font=("Bahnschrift SemiBold", 8),
@@ -3232,6 +3246,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             ("KARTS", "Kart"),
             ("WHEELS", "Wheels"),
             ("MAPS", "Track"),
+            ("MODPACKS", "Modpack"),
         ):
             button = tk.Label(
                 filter_row,
@@ -3809,6 +3824,11 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 style="arc", outline="#FFFFFF", width=1
             )
 
+        elif mod_type == "Modpack":
+            for dx, dy in ((-21,-13),(-5,-4),(11,5)):
+                canvas.create_rectangle(cx+dx-16,cy+dy-11,cx+dx+16,cy+dy+11,outline=col,width=2)
+                canvas.create_line(cx+dx-10,cy+dy,cx+dx+8,cy+dy,fill=orange,width=2)
+
         elif mod_type == "Track":
             # Stylized road circuit inside a map frame, no external assets needed.
             canvas.create_rectangle(
@@ -4132,6 +4152,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             ("Kart", "Kart"),
             ("Wheels", "Wheels"),
             ("Track", "Map / Track"),
+            ("Modpack", "Modpack / Bundle"),
         ):
             type_menu.add_command(
                 label=label,

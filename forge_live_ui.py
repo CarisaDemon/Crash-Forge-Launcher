@@ -13,6 +13,27 @@ from tkinter import messagebox, simpledialog
 import forge_services as services
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
+import forge_iso_integrity as iso_integrity
+from forge_version_dialog import ask_play_outdated
+
+
+def available_game_update(game_path, release):
+    """Verified game release needing action; keep 'unknown' distinct from old.
+
+    Only authoritative GitHub game-release metadata can trigger the warning,
+    never unrelated launcher versions, offline checks or unverified assets.
+    """
+    if not isinstance(release, dict) or not release.get("verified_package"):
+        return None
+    version = str(release.get("version") or "")
+    if releases.parse_version(version) is None:
+        return None
+    installed = releases.game_installed_version(game_path)
+    comparison = releases.compare_versions(installed, version)
+    if comparison in (0, 1):
+        return None
+    return {"installed": installed, "available": version,
+            "unknown": comparison is None}
 
 
 class ForgeLiveMixin:
@@ -36,6 +57,11 @@ class ForgeLiveMixin:
         self.online_cfg = services.read_online_config(self._forge_base_dir())
         self.installed_mods_record = self._load_installed_mods_record()
         self._refresh_real_install_ui()
+        # Offline CTR-U audit; no dialogs or restriction on local gameplay.
+        try:
+            iso_integrity.start_background_check(self.game_install_path, "launcher_start")
+        except Exception:
+            pass  # ISO diagnostics must never break launcher startup.
         self._render_real_news()
         self._refresh_hub_source_status()
         if self.online_cfg.get("feed_url"):
@@ -84,19 +110,31 @@ class ForgeLiveMixin:
                 text="INSTALL unavailable until a stable Windows game release is published.")
 
     def _update_primary_game_button(self):
+        """Keep the large UPDATE button; swap the orange/grey emphasis by need.
+
+        UPDATE remains clickable when grey so it can manually recheck GitHub.
+        PLAY also stays clickable when grey: we never force a game update.
+        """
         buttons = getattr(self, "sidebar_buttons", None)
-        if not buttons:
+        if not buttons or len(buttons) < 2:
             return
-        main = buttons[0]
+        main, update = buttons[:2]
         installed = bool(getattr(self, "local_game_status", {}).get("installed"))
-        if installed:
-            main.set_label("PLAY")
-            main.set_disabled(False)
-        else:
-            main.set_label("INSTALL")
-            valid = bool(self.latest_game_release and
-                         self.latest_game_release.get("verified_package"))
-            main.set_disabled(not valid)
+        release = getattr(self, "latest_game_release", None)
+        verified = bool(release and release.get("verified_package"))
+        update_available = installed and bool(
+            available_game_update(self.game_install_path, release))
+        updating = bool(getattr(self, "game_update_busy", False))
+
+        main.set_label("PLAY" if installed else "INSTALL")
+        main.set_disabled((not installed and not verified) or updating)
+        main.set_accent((installed and not update_available) or
+                        (not installed and verified))
+
+        # The user's forged UPDATE button is NEVER removed or replaced by
+        # a duplicate in Settings. Muted when no verified game update exists.
+        update.set_disabled(updating)
+        update.set_accent(bool(update_available))
 
     def _refresh_real_install_ui(self):
         status = services.real_game_status(self.game_install_path)
@@ -365,6 +403,10 @@ class ForgeLiveMixin:
             elif event == "game_installed":
                 self.game_update_busy = False
                 self._refresh_real_install_ui()
+                try:
+                    iso_integrity.start_background_check(self.game_install_path, "game_updated")
+                except Exception:
+                    pass
                 self.release_status_var.set(
                     "Installed official game v" + data["version"])
                 self.status_label.configure(
@@ -672,7 +714,7 @@ class ForgeLiveMixin:
             "Forge Hub - Install Mod",
             f"Install {mod['title']} by {mod['author']}?\n\n"
             "Source: published community catalog.\n"
-            "ZIP will be verified with SHA-256 and extracted into assets/mods.\n"
+            "ZIP will be verified with SHA-256 and installed by category.\n"
             "A previous version of the same mod will be backed up.",
             parent=self)
         if not consent:
@@ -710,12 +752,32 @@ class ForgeLiveMixin:
             text="Opening submission page. The local ZIP is not uploaded automatically.")
         webbrowser.open(url)
 
+    def _confirm_play_older_game(self, context):
+        """Custom orange/steel modal. No copied launcher wallpaper."""
+        icon_path = os.path.join(
+            self._forge_base_dir(), "assets", "icons", "cfr_icon.png")
+        return ask_play_outdated(self, context, icon_path=icon_path)
+
     def _play_installed_game(self):
         state = services.real_game_status(self.game_install_path)
         if not state["installed"]:
             self.status_label.configure(text="Cannot play: ctr-native.exe is not in the selected game folder.")
             self._refresh_real_install_ui()
             return
+        if getattr(self, "game_update_busy", False):
+            self.status_label.configure(text="Wait for the game update to finish before playing.")
+            return
+        new_version = available_game_update(
+            self.game_install_path, getattr(self, "latest_game_release", None))
+        if new_version and not self._confirm_play_older_game(new_version):
+            self.status_label.configure(
+                text="Game launch cancelled; no files or versions were changed.")
+            return
+        # Independent CTR-U audit always runs asynchronously, even if modded.
+        try:
+            iso_integrity.start_background_check(self.game_install_path, "play")
+        except Exception:
+            pass  # Even verifier failures cannot stop offline PLAY.
         try:
             subprocess.Popen([state["exe_path"]], cwd=self.game_install_path)
             self.status_label.configure(text="Started installed Crash Forge game.")
