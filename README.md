@@ -47,10 +47,10 @@ For CI use environment variable CFR_BUILD_DIR=build. Do not add private mod ZIPs
 ## Publishing new launcher versions
 
 1. Bump **launcher_version.txt** (for example 0.3.29) and the changelog.
-2. Run tests and push the source.
-3. Push a matching semantic version tag, e.g. v0.3.29.
-4. GitHub Actions builds the Windows release, generates the SHA-256 and publishes both assets.
-5. Existing public portable launchers detect the new verified version automatically.
+2. Run tests and commit the source to **main**. Include **[publish-launcher]** in the commit message to trigger a stable downloadable release, or push a matching tag such as **v0.3.29**.
+3. GitHub Actions tests and builds the Windows package. A marked main commit creates the matching version tag and Release with the Windows ZIP and its SHA-256 automatically.
+4. Ordinary commits without that marker do **not** publish a release; manual Actions runs only create build artifacts.
+5. Existing public portable launchers then detect the newer verified version automatically.
 
 The updater accepts only the official **Crash-Forge-Launcher-Windows.zip** from this pinned GitHub repository, with a matching SHA-256 obtained through GitHub asset metadata or a checksum sidecar.
 

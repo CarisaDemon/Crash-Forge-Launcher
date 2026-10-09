@@ -2,6 +2,8 @@ name: Build Windows Launcher Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -12,6 +14,10 @@ permissions:
 jobs:
   windows-launcher:
     name: Package Windows Launcher
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[publish-launcher]')
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
@@ -23,14 +29,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify matching version tag
+      - name: Validate release version and tag
+        id: release_version
         shell: pwsh
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          $version=(Get-Content launcher_version.txt -Raw).Trim()
-          if ($env:GITHUB_REF_NAME -ne ("v"+$version)) {
+          $version = (Get-Content launcher_version.txt -Raw).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "launcher_version.txt must be a semantic version"
+          }
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:GITHUB_REF_NAME -ne ("v" + $version)) {
             throw "Tag $env:GITHUB_REF_NAME must match launcher_version.txt v$version"
           }
+          "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install pinned Windows build dependencies
         shell: pwsh
@@ -62,10 +72,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish GitHub Release (version tags only)
+      - name: Publish stable GitHub Release
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.ref == 'refs/heads/main' &&
+           contains(github.event.head_commit.message, '[publish-launcher]'))
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
         with:
+          tag_name: ${{ steps.release_version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Crash Forge Racing Launcher ${{ steps.release_version.outputs.tag }}
           generate_release_notes: true
           prerelease: false
           files: |
