@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.41
+- File verification system.
+- Scan launcher files in background.
+- Repair damaged official files using the verified updater.
+
 v0.3.40
 - Added Tcl/Tk release integrity validation and extracted ZIP smoke test.
 - Keep the complete _internal folder next to the launcher EXE.

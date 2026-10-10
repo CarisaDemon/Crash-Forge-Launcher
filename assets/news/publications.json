@@ -3,6 +3,15 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.41",
+      "title": "File verification system",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.41",
+      "notes": [
+        "File verification system."
+      ]
+    },
+    {
       "version": "0.3.39",
       "title": "Forge Hub Mod Manager",
       "date": "2026-10-10",

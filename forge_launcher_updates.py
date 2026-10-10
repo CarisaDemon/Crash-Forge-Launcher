@@ -334,7 +334,7 @@ def read_installed_release(app_dir, root=None):
         return None
 
 
-def update_required(release, installed, app_dir=None, root=None):
+def update_required(release, installed, app_dir=None, root=None, force_repair=False):
     """Detect new versions OR a changed verified package on the same version.
 
     A fresh/manual installation has no signed-package receipt and is offered
@@ -350,6 +350,10 @@ def update_required(release, installed, app_dir=None, root=None):
         return True
     if app_dir is None:
         return False
+    if force_repair:
+        # Always restage an official, checksum-verified identical version
+        # when a SHA-256 local integrity scan detected damaged files.
+        return True
     package = release.get("asset") or {}
     digest = str(package.get("sha256") or "").lower()
     if not SHA.fullmatch(digest):
@@ -367,6 +371,10 @@ def pending_update_required(pending, app_dir, root=None):
     if latest is None or installed is None or latest < installed:
         return False
     if latest > installed:
+        return True
+    if pending.get("repair") is True:
+        # Explicit repair staging is still required after a same-version
+        # receipt: the receipt does not attest to local file health.
         return True
     digest = str(pending.get("zip_sha256") or "").lower()
     if not SHA.fullmatch(digest):
@@ -425,17 +433,21 @@ def pending_update(root=None):
                 metadata.get("version") != data["version"] or
                 not SHA.fullmatch(digest)):
             return None
+        repair = (data.get("repair") is True and
+                  metadata.get("repair") is True)
         return {"version": data["version"], "payload": str(payload),
                 "manifest": str(manifest), "zip_sha256": digest,
-                "release_url": data.get("release_url", "")}
+                "release_url": data.get("release_url", ""),
+                "repair": repair}
     except (OSError, ValueError, TypeError, KeyError):
         return None
 
 
 def stage_release(release, current_version, progress=None, root=None,
-                  app_dir=None):
+                  app_dir=None, force_repair=False):
     """Download, hash and safely extract update to LOCALAPPDATA (no installation writes)."""
-    if not update_required(release, current_version, app_dir=app_dir, root=root):
+    if not update_required(release, current_version, app_dir=app_dir,
+                           root=root, force_repair=force_repair):
         return None
     if not release.get("verified") or not release.get("asset"):
         raise LauncherUpdateError("Launcher release has no verified ZIP")
@@ -448,7 +460,8 @@ def stage_release(release, current_version, progress=None, root=None,
     root.mkdir(parents=True, exist_ok=True)
     existing = pending_update(root)
     if (existing and existing["version"] == release["version"]
-            and existing.get("zip_sha256") == expected):
+            and existing.get("zip_sha256") == expected
+            and (not force_repair or existing.get("repair") is True)):
         return existing
     temp = Path(tempfile.mkdtemp(prefix="dl-", dir=str(root)))
     archive = temp / "launcher.zip"
@@ -496,7 +509,7 @@ def stage_release(release, current_version, progress=None, root=None,
         (temp / "manifest.json").write_text(json.dumps({
             "schema": 1, "repository": REPOSITORY,
             "version": release["version"], "zip_sha256": expected,
-            "files": hashes
+            "repair": bool(force_repair), "files": hashes
         }, indent=2), encoding="utf-8")
         # Atomic staging: only complete, verified releases become pending.
         if stage.exists():
@@ -507,7 +520,7 @@ def stage_release(release, current_version, progress=None, root=None,
         new_pending = {
             "repository": REPOSITORY, "version": release["version"],
             "release_url": release["url"],
-            "staged_at": int(time.time()),
+            "repair": bool(force_repair), "staged_at": int(time.time()),
         }
         pending_tmp = root / "pending.json.tmp"
         pending_tmp.write_text(json.dumps(new_pending, indent=2), encoding="utf-8")

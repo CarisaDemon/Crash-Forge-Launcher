@@ -11,6 +11,7 @@ import zipfile
 SOURCE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(SOURCE))
 import forge_launcher_updates as lu
+import forge_launcher_integrity as integrity
 
 
 REQUIRED_TCL_FILES=("_internal/_tcl_data/init.tcl","_internal/_tk_data/tk.tcl","_internal/tcl86t.dll","_internal/tk86t.dll","_internal/_tkinter.pyd")
@@ -40,6 +41,9 @@ def verify_folder(location):
     assert_tcl_payload(names)
     if not expected.issubset(names):
         raise lu.LauncherUpdateError("Missing game launcher EXE, updater or version file")
+    report=integrity.audit(location)
+    if report["status"] != "ok":
+        raise lu.LauncherUpdateError("Launcher files failed SHA-256 integrity check: "+str(report["problems"][:2]))
     version=(location/"launcher_version.txt").read_text(encoding="utf-8-sig").strip()
     if not lu.parse_version(version):
         raise lu.LauncherUpdateError("Bad launcher_version.txt")
@@ -51,6 +55,7 @@ def verify_archive(path):
         version=zf.read("launcher_version.txt").decode("utf-8-sig").strip()
         if not lu.parse_version(version):
             raise lu.LauncherUpdateError("Bad ZIP version")
+        integrity.audit_release_zip(path)
         files=lu.inspect_package(zf,version)
         assert_tcl_payload({x.filename.replace(chr(92),'/').lower() for x,_ in files})
         return version,len(files),sum(x.file_size for x,_ in files)

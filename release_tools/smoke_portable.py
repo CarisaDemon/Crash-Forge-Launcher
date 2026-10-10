@@ -80,6 +80,8 @@ def main():
         result=no_window_run([str(folder/"CrashForgeLauncher.exe"),"--self-test"])
         assert result.returncode==0, "Launcher failed after extraction: "+result.stderr[-900:]
     print("PASS fully extracted release ZIP under OneDrive-like path")
+    import forge_launcher_integrity as integrity
+    assert integrity.audit(PORTABLE)["status"]=="ok"
     featured = PORTABLE/"_internal"/"assets"/"news"/"latest_update.webp"
     assert featured.is_file(), "Featured artwork missing from internal resources"
     assert not (PORTABLE/"assets"/"news"/"latest_update.webp").exists(), (

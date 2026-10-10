@@ -87,7 +87,8 @@ def validate_staged(app_dir, payload, manifest_path, state_dir, allow_fresh=Fals
     current = updates.read_local_version(dest)
     candidate = {"version": version, "verified": True,
                  "asset": {"sha256": manifest.get("zip_sha256")}}
-    if not updates.update_required(candidate, current, app_dir=dest, root=root):
+    if not updates.update_required(candidate, current, app_dir=dest, root=root,
+                                   force_repair=manifest.get("repair") is True):
         raise UpdateApplyError("This verified package is already installed")
     if not updates.SHA.fullmatch(str(manifest.get("zip_sha256") or "")):
         raise UpdateApplyError("The staging manifest has no valid ZIP digest")

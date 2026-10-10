@@ -2914,6 +2914,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             font=("Bahnschrift SemiBold", 7),
             padx=7, pady=4,
         ).pack(side="right")
+        tk.Button(
+            panel, text="VERIFY FILES", cursor="hand2", relief="flat",
+            command=self._verify_launcher_files_now,
+            bg="#242830", fg="#F4D9C1",
+            font=("Bahnschrift SemiBold", 7), padx=7, pady=4,
+        ).pack(side="right", padx=(0, 6))
         tk.Label(
             parent, textvariable=self.launcher_update_status_var,
             bg=background, fg="#A8B2BD",
@@ -3000,6 +3006,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
     def _check_launcher_updates_now(self):
         self._request_launcher_update_check(manual=True)
+
+    def _verify_launcher_files_now(self):
+        self._check_launcher_integrity(manual=True)
 
     def _set_release_check_frequency(self, choice):
         if choice not in releases.CHECK_CHOICES:

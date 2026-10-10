@@ -99,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          foreach ($version in @("0.3.37", "0.3.38", "0.3.39")) {
+          foreach ($version in @("0.3.37", "0.3.38", "0.3.39", "0.3.41")) {
             $file = Join-Path "assets/news" ("forge-news-v" + $version + ".webp")
             if (Test-Path -LiteralPath $file) {
               gh release upload ("v" + $version) $file --clobber --repo $env:GITHUB_REPOSITORY

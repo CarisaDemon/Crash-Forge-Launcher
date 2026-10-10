@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog
 import forge_services as services
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
+import forge_launcher_integrity as launcher_integrity
 import forge_news_history as news_history
 import forge_iso_integrity as iso_integrity
 from forge_version_dialog import ask_play_outdated
@@ -56,6 +57,8 @@ class ForgeLiveMixin:
         self.release_check_busy = False
         self.launcher_update_busy = False
         self.launcher_update_ready = None
+        self._launcher_integrity_busy = False
+        self._launcher_integrity_needs_repair = False
         self._launcher_update_retry_after = 0.0
         self._release_install_after_pending = False
         self.latest_game_release = None
@@ -77,6 +80,7 @@ class ForgeLiveMixin:
                 text="Detected an existing ctr-native.exe and recovered its install folder.")
         self.after(1300, self._refresh_news_history)
         self.after(3600000, self._scheduled_news_history_check)
+        self.after(650, self._check_launcher_integrity)
         self.after(1600, self._startup_release_check)
         self.after(2700, self._startup_launcher_update_check)
         self.after(3600000, self._scheduled_launcher_update_check)
@@ -444,6 +448,29 @@ class ForgeLiveMixin:
                 if self.hub_overlay.winfo_ismapped():
                     self._render_hub_cards()
                 self.hub_status_label.configure(text=("Public source unavailable: " + data)[:160])
+            elif event == "launcher_integrity_result":
+                result, manual = data
+                self._launcher_integrity_busy = False
+                if result["status"] == "ok":
+                    self._launcher_integrity_needs_repair = False
+                    message = ("Launcher files verified: " +
+                               str(result["checked"]) + " OK.")
+                elif result["status"] == "unavailable":
+                    message = ("No file verification manifest found. " +
+                               "Install the complete latest Launcher ZIP.")
+                else:
+                    self._launcher_integrity_needs_repair = True
+                    issues = result.get("problems") or []
+                    message = ("Launcher integrity: " +
+                               str(len(issues)) + " issue(s). " +
+                               "; ".join(issues[:2])[:105])
+                self.launcher_update_status_var.set(message[:200])
+                if manual or result["status"] == "damaged":
+                    self.status_label.configure(text=message[:175])
+                if (result["status"] == "damaged" and
+                        self.launcher_auto_update and
+                        not self.launcher_update_busy):
+                    self._request_launcher_update_check(manual=False)
             elif event == "launcher_update_progress":
                 phase, done, total, version = data
                 self.launcher_update_status_var.set(
@@ -479,6 +506,12 @@ class ForgeLiveMixin:
                 self.launcher_last_result = result
                 self.launcher_update_status_var.set(result)
                 self._save_launcher_settings()
+                if (self._launcher_integrity_needs_repair and
+                        self.launcher_auto_update and not pending):
+                    # A normal version check may have been in flight before
+                    # the local integrity audit completed. Retry once as repair.
+                    self.after(100, lambda: self._request_launcher_update_check(
+                        manual=False))
                 if manual:
                     self.status_label.configure(text=result)
             elif event == "launcher_update_error":
@@ -604,6 +637,30 @@ class ForgeLiveMixin:
                 self.hub_status_label.configure(text=("Installation stopped: " + str(data))[:160])
         self.after(250, self._poll_live_updates)
 
+    def _check_launcher_integrity(self, manual=False):
+        """Read-only SHA-256 scan: network/download work is separate."""
+        if not launcher_updates.is_portable_build():
+            if manual:
+                self.launcher_update_status_var.set(
+                    "File verification is available in packaged Windows EXEs.")
+            return
+        if self._launcher_integrity_busy:
+            return
+        self._launcher_integrity_busy = True
+        if manual:
+            self.launcher_update_status_var.set("Verifying launcher files...")
+        base = self._forge_base_dir()
+        def worker():
+            try:
+                report = launcher_integrity.audit(base)
+            except Exception as exc:
+                report = {"status": "damaged", "checked": 0,
+                          "problems": ["Verification failed: " + str(exc)[:140]]}
+            self.online_queue.put(("launcher_integrity_result",
+                                   (report, manual)))
+        threading.Thread(target=worker, daemon=True,
+                         name="ForgeLauncherIntegrity").start()
+
     def _startup_launcher_update_check(self):
         """Launcher code uses its OWN GitHub repo, not game release tags."""
         if self.launcher_auto_update:
@@ -650,13 +707,15 @@ class ForgeLiveMixin:
                            self._forge_base_dir()))
         installed = launcher_updates.read_local_version(install_dir)
         auto = bool(self.launcher_auto_update)
+        repair = bool(getattr(self, "_launcher_integrity_needs_repair", False))
 
         def worker():
             try:
                 release = launcher_updates.fetch_latest()
                 pending = None
                 if release and launcher_updates.update_required(
-                        release, installed, app_dir=install_dir):
+                        release, installed, app_dir=install_dir,
+                        force_repair=repair):
                     # In source/.bat mode this stages a SEPARATE portable
                     # installation. It never overwrites .py, .bat or source assets.
                     if auto:
@@ -666,7 +725,7 @@ class ForgeLiveMixin:
                                  (phase, done, total, release["version"])))
                         pending = launcher_updates.stage_release(
                             release, installed, progress=report,
-                            app_dir=install_dir)
+                            app_dir=install_dir, force_repair=repair)
                 self.online_queue.put(
                     ("launcher_update_ok",
                      (release, pending, installed, manual, portable)))

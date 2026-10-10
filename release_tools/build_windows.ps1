@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
@@ -84,6 +84,9 @@ foreach($file in @("launcher_version.txt","LAUNCHER_CHANGELOG.txt","forge_online
 }
 $version = (Get-Content -LiteralPath (Join-Path $exeDir "launcher_version.txt") -Raw).Trim()
 if($version -notmatch '^\d+\.\d+\.\d+$'){throw "Invalid launcher release version"}
+Write-Output "Writing SHA-256 manifest for verified Launcher files..."
+& $Python -c "import sys;sys.path.insert(0,sys.argv[1]);import forge_launcher_integrity as i;i.build_manifest(sys.argv[2],sys.argv[3])" $Source $exeDir $version
+if($LASTEXITCODE -ne 0){throw "Could not generate Launcher integrity manifest"}
 Write-Output "Validating distributable package..."
 & $Python (Join-Path $Source "release_tools\verify_bundle.py") $exeDir
 if($LASTEXITCODE -ne 0){throw "Bundle validation failed"}
