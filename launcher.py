@@ -13,6 +13,7 @@ import forge_services as services
 import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
+import forge_news_history as news_history
 
 try:
     from PIL import Image, ImageTk, ImageOps
@@ -2365,7 +2366,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
 
     def _paint_hero(self, event=None):
-        """Feature the latest launcher update over the actual editor screenshot."""
+        """Feature the latest publication, with its OWN illustration."""
         c = event.widget if event is not None else getattr(self, "hero_canvas", None)
         if c is None:
             return
@@ -2378,9 +2379,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             c.create_rectangle(0, 0, w, h,
                                fill="#0B0D10", outline="", tags="hero")
 
-        # The illustration is the user's actual Model Importer screenshot.
-        # Keep it complete (contain rather than cover) so all three tools
-        # remain recognizable in resizable / 4:3 windows.
+        # Per-version illustration, fully visible even in 4:3 windows.
+        # Until artwork for a given release arrives, use garage art, not
+        # a screenshot belonging to a different announcement.
         art_x = min(w - 205, max(250, int(round(w * 0.42))))
         art_y = 81 if h >= 310 else 41
         art_w = max(1, w - art_x - 19)
@@ -2391,20 +2392,32 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                                fill="#0C0F14", outline="#4B5057",
                                width=1, tags="hero")
             if Image is not None and ImageTk is not None:
-                image_path = os.path.join(BASE_DIR, "assets", "news",
-                                          "latest_update.webp")
-                if getattr(sys, "frozen", False):
-                    image_path = os.path.join(
-                        BASE_DIR, "_internal", "assets", "news",
-                        "latest_update.webp")
+                archived = getattr(self, "launcher_news_history", None)
+                if archived is None:
+                    archived = news_history.local_publications(BASE_DIR)
+                latest = archived[0] if archived else None
+                release_version = latest["version"] if latest else APP_VERSION
+                # Never show the Model Importer picture on the Forge Hub post
+                # or vice versa. Only exact release-specific artwork qualifies.
+                image_path = (
+                    news_history.artwork_file(BASE_DIR, release_version)
+                    or news_history.garage_fallback(BASE_DIR)
+                )
                 try:
-                    if not hasattr(self, "_hero_update_source"):
+                    source_key = (
+                        image_path,
+                        os.stat(image_path).st_mtime_ns if image_path else -1,
+                    )
+                    if getattr(self, "_hero_art_key", None) != source_key:
+                        self._hero_art_key = source_key
                         self._hero_update_source = (
                             Image.open(image_path).convert("RGB")
-                            if os.path.isfile(image_path) else None)
+                            if image_path else None
+                        )
+                        self._hero_update_bounds = None
                     if self._hero_update_source is not None:
                         bounds = (art_w, art_h)
-                        if getattr(self, "_hero_update_bounds", None) != bounds:
+                        if self._hero_update_bounds != bounds:
                             fitted = ImageOps.contain(
                                 self._hero_update_source, bounds,
                                 method=Image.Resampling.LANCZOS)
@@ -2414,7 +2427,6 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                                        image=self._hero_update_photo,
                                        anchor="center", tags="hero")
                 except (OSError, ValueError, tk.TclError):
-                    # Keep launcher usable even when an optional graphic is missing.
                     pass
             c.create_rectangle(art_x-4, art_y-4,
                                art_x+art_w+4, art_y+art_h+4,
@@ -2429,11 +2441,17 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         c.create_line(8, 8, min(w-8, 275), 8,
                       fill=COLORS["orange"], width=2, tags="hero")
 
-        if not hasattr(self, "_hero_release_content"):
-            self._hero_release_content = services.real_launcher_changelog(
+        archived = getattr(self, "launcher_news_history", None)
+        if archived is None:
+            archived = news_history.local_publications(BASE_DIR)
+        featured = archived[0] if archived else None
+        if featured:
+            release = "v" + featured["version"]
+            highlights = featured.get("notes", [])[:3]
+        else:
+            release, highlights = services.real_launcher_changelog(
                 BASE_DIR, limit=3)
-        release, highlights = self._hero_release_content
-        release = release or ("v" + APP_VERSION)
+            release = release or ("v" + APP_VERSION)
 
         x = 33 if w >= 700 else 23
         copy_width = max(180, left_w - x - 38)
@@ -2445,7 +2463,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                       tags="hero")
 
         title_size = max(19, int(round((25 if w >= 720 else 21)*s)))
-        hero_title = "MODEL IMPORTER 1.8" if APP_VERSION == "0.3.38" else "WHAT'S NEW"
+        version_shown = featured["version"] if featured else APP_VERSION
+        hero_title = ("MODEL IMPORTER 1.8" if version_shown == "0.3.38" else
+                      "FORGE HUB" if version_shown == "0.3.37" else "WHAT'S NEW")
         c.create_text(x, 85,
                       text=hero_title, anchor="w", fill="#F4F2ED",
                       font=("Bahnschrift SemiBold", title_size), tags="hero")
@@ -2944,13 +2964,18 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             font=("Bahnschrift", 8), anchor="w",
             justify="left", wraplength=465 if compact else 275,
         ).pack(fill="x", pady=(3, 0))
+        restart_ready = self._launcher_restart_required()
         restart = tk.Button(
-            parent, text="RESTART & UPDATE TO EXE", cursor="hand2",
+            parent, text="RESTART TO UPDATE LAUNCHER",
+            cursor="hand2" if restart_ready else "arrow",
             command=self._restart_into_updated_launcher,
-            bg="#4F270F", fg="#FFE6CC", relief="flat",
-            font=("Bahnschrift SemiBold", 8),
+            bg="#4F270F" if restart_ready else "#242830",
+            fg="#FFE6CC" if restart_ready else "#88909B",
+            disabledforeground="#88909B",
+            activebackground="#713710", activeforeground="#FFFFFF",
+            relief="flat", font=("Bahnschrift SemiBold", 8),
             padx=9, pady=5,
-            state="normal" if getattr(self, "launcher_update_ready", None) else "disabled",
+            state="normal" if restart_ready else "disabled",
         )
         restart.pack(fill="x", pady=(4, 0))
         buttons = getattr(self, "_launcher_restart_buttons", None)
@@ -2959,17 +2984,39 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._launcher_restart_buttons.append(restart)
         return panel
 
+    def _launcher_restart_required(self):
+        """Only a verified, staged, newer launcher release needs a restart."""
+        if not (getattr(self, "launcher_auto_update", False) and
+                getattr(self, "launcher_update_ready", None)):
+            return False
+        pending = launcher_updates.pending_update()
+        if not pending or pending["version"] != self.launcher_update_ready["version"]:
+            return False
+        if launcher_updates.is_portable_build():
+            install_dir = self._forge_base_dir()
+        else:
+            install_dir = launcher_updates.portable_target_for_source(
+                self._forge_base_dir())
+        return launcher_updates.pending_update_required(
+            pending, install_dir)
+
     def _set_restart_buttons_enabled(self, enabled):
+        ready = bool(enabled) and self._launcher_restart_required()
         for button in getattr(self, "_launcher_restart_buttons", []):
             try:
                 if button.winfo_exists():
-                    button.configure(state="normal" if enabled else "disabled")
+                    button.configure(
+                        state="normal" if ready else "disabled",
+                        bg="#4F270F" if ready else "#242830",
+                        fg="#FFE6CC" if ready else "#88909B",
+                        cursor="hand2" if ready else "arrow",
+                    )
             except tk.TclError:
                 pass
 
     def _restart_into_updated_launcher(self):
         """User action: close gracefully, then start the new GUI EXE."""
-        if not getattr(self, "launcher_update_ready", None):
+        if not self._launcher_restart_required():
             return
         if getattr(self, "game_update_busy", False) or getattr(self, "mod_download_busy", False):
             self.launcher_update_status_var.set(

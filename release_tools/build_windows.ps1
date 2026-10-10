@@ -23,8 +23,17 @@ if(Test-Path -LiteralPath $exeDir) {
   Remove-Item -LiteralPath $exeDir -Recurse -Force
 }
 $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets/news"
+$historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
+# If images are provided later, bundle them under their ORIGINAL version.
+$newsArtArguments = @()
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp")) {
+  $picture = Join-Path $Source ("assets\news\" + $name)
+  if(Test-Path -LiteralPath $picture) {
+    $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
+  }
+}
 Write-Output "Building main Windows launcher..."
-& $Python -m PyInstaller --noconfirm --clean --noupx --onedir --windowed --contents-directory "_internal" --add-data $featuredAsset --name "CrashForgeLauncher" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath $distRoot --workpath (Join-Path $workRoot "main") --specpath $specRoot (Join-Path $Source "launcher.py")
+& $Python -m PyInstaller --noconfirm --clean --noupx --onedir --windowed --contents-directory "_internal" --add-data $featuredAsset --add-data $historyAsset @newsArtArguments --name "CrashForgeLauncher" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath $distRoot --workpath (Join-Path $workRoot "main") --specpath $specRoot (Join-Path $Source "launcher.py")
 if($LASTEXITCODE -ne 0) {throw "Main launcher PyInstaller build failed"}
 Write-Output "Building independent updater helper..."
 & $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "ForgeLauncherUpdater" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath (Join-Path $BuildRoot "updater") --workpath (Join-Path $workRoot "updater") --specpath $specRoot (Join-Path $Source "launcher_update_helper.py")

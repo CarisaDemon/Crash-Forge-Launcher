@@ -85,8 +85,12 @@ def validate_staged(app_dir, payload, manifest_path, state_dir, allow_fresh=Fals
     if not updates.parse_version(version):
         raise UpdateApplyError("Invalid launcher release version")
     current = updates.read_local_version(dest)
-    if not updates.newer_release({"version":version},current):
-        raise UpdateApplyError("This release would not upgrade the current launcher")
+    candidate = {"version": version, "verified": True,
+                 "asset": {"sha256": manifest.get("zip_sha256")}}
+    if not updates.update_required(candidate, current, app_dir=dest, root=root):
+        raise UpdateApplyError("This verified package is already installed")
+    if not updates.SHA.fullmatch(str(manifest.get("zip_sha256") or "")):
+        raise UpdateApplyError("The staging manifest has no valid ZIP digest")
     files = manifest.get("files")
     if not isinstance(files,list) or not 3 <= len(files) <= updates.MAX_FILES:
         raise UpdateApplyError("Invalid release manifest file count")
@@ -180,6 +184,10 @@ def apply_update(app_dir, payload, manifest_path, state_dir, allow_fresh=False):
         version_after=updates.read_local_version(target)
         if version_after!=version:
             raise UpdateApplyError("Version marker missing after replacement")
+        # Receipt is part of successful installation; failure rolls back.
+        metadata=json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        updates.save_installed_release(
+            version, metadata["zip_sha256"], target, root=root)
     except Exception as exc:
         failures=[]
         for destination,original in reversed(changed):

@@ -310,6 +310,93 @@ def _inside(parent, candidate):
         return False
 
 
+
+def _installed_receipt_file(root=None):
+    root = Path(root) if root is not None else state_root()
+    return root / "installed_release.json"
+
+
+def read_installed_release(app_dir, root=None):
+    """Read the trusted updater's local receipt for this exact EXE installation."""
+    path = _installed_receipt_file(root)
+    try:
+        if not path.is_file() or path.stat().st_size > 8192:
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if (not isinstance(data, dict) or data.get("schema") != 1 or
+                data.get("repository") != REPOSITORY or
+                data.get("app_dir") != str(Path(app_dir).resolve()) or
+                data.get("version") != read_local_version(app_dir) or
+                not SHA.fullmatch(str(data.get("zip_sha256") or ""))):
+            return None
+        return data
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def update_required(release, installed, app_dir=None, root=None):
+    """Detect new versions OR a changed verified package on the same version.
+
+    A fresh/manual installation has no signed-package receipt and is offered
+    one verified refresh. The helper writes that receipt on successful apply,
+    so identical ZIPs never trigger an update loop.
+    """
+    if not release or not release.get("verified"):
+        return False
+    latest, local = parse_version(release.get("version")), parse_version(installed)
+    if latest is None or local is None or latest < local:
+        return False
+    if latest > local:
+        return True
+    if app_dir is None:
+        return False
+    package = release.get("asset") or {}
+    digest = str(package.get("sha256") or "").lower()
+    if not SHA.fullmatch(digest):
+        return False
+    receipt = read_installed_release(app_dir, root=root)
+    return receipt is None or receipt["zip_sha256"].lower() != digest
+
+
+def pending_update_required(pending, app_dir, root=None):
+    """A fully staged, hashed ZIP can replace an older BUILD of the same vX.Y.Z."""
+    if not pending or not isinstance(pending, dict):
+        return False
+    current = read_local_version(app_dir)
+    latest, installed = parse_version(pending.get("version")), parse_version(current)
+    if latest is None or installed is None or latest < installed:
+        return False
+    if latest > installed:
+        return True
+    digest = str(pending.get("zip_sha256") or "").lower()
+    if not SHA.fullmatch(digest):
+        return False
+    receipt = read_installed_release(app_dir, root=root)
+    return receipt is None or receipt["zip_sha256"].lower() != digest
+
+
+def save_installed_release(version, digest, app_dir, root=None):
+    """Persist the verified ZIP hash only after the helper completes install."""
+    if not parse_version(version) or not SHA.fullmatch(str(digest or "")):
+        raise LauncherUpdateError("Cannot save unverified launcher release receipt")
+    root = Path(root) if root is not None else state_root()
+    root.mkdir(parents=True, exist_ok=True)
+    path = _installed_receipt_file(root)
+    record = {
+        "schema": 1, "repository": REPOSITORY, "version": version,
+        "zip_sha256": digest.lower(), "app_dir": str(Path(app_dir).resolve()),
+        "installed_at": int(time.time()),
+    }
+    tmp = root / "installed_release.json.tmp"
+    try:
+        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return record
+
+
 def _status_file(root):
     return root / "pending.json"
 
@@ -327,15 +414,28 @@ def pending_update(root=None):
         manifest = stage / "manifest.json"
         if not payload.is_dir() or not manifest.is_file():
             return None
+        if manifest.stat().st_size > 409600:
+            return None
+        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(metadata, dict):
+            return None
+        digest = str(metadata.get("zip_sha256") or "").lower()
+        if (metadata.get("schema") != 1 or
+                metadata.get("repository") != REPOSITORY or
+                metadata.get("version") != data["version"] or
+                not SHA.fullmatch(digest)):
+            return None
         return {"version": data["version"], "payload": str(payload),
-                "manifest": str(manifest), "release_url": data.get("release_url", "")}
+                "manifest": str(manifest), "zip_sha256": digest,
+                "release_url": data.get("release_url", "")}
     except (OSError, ValueError, TypeError, KeyError):
         return None
 
 
-def stage_release(release, current_version, progress=None, root=None):
+def stage_release(release, current_version, progress=None, root=None,
+                  app_dir=None):
     """Download, hash and safely extract update to LOCALAPPDATA (no installation writes)."""
-    if not release or not newer_release(release, current_version):
+    if not update_required(release, current_version, app_dir=app_dir, root=root):
         return None
     if not release.get("verified") or not release.get("asset"):
         raise LauncherUpdateError("Launcher release has no verified ZIP")
@@ -347,7 +447,8 @@ def stage_release(release, current_version, progress=None, root=None):
         raise LauncherUpdateError("Invalid launcher update version")
     root.mkdir(parents=True, exist_ok=True)
     existing = pending_update(root)
-    if existing and existing["version"] == release["version"]:
+    if (existing and existing["version"] == release["version"]
+            and existing.get("zip_sha256") == expected):
         return existing
     temp = Path(tempfile.mkdtemp(prefix="dl-", dir=str(root)))
     archive = temp / "launcher.zip"
@@ -447,8 +548,7 @@ def launch_update_after_exit(app_dir, current_pid, root=None,
         return False
     root = Path(root) if root is not None else state_root()
     pending = pending_update(root)
-    if not pending or not newer_release({"version": pending["version"]},
-                                       read_local_version(app_dir)):
+    if not pending_update_required(pending, app_dir, root=root):
         return False
     app_dir = Path(app_dir).resolve()
     staging = Path(pending["payload"]).resolve()
@@ -459,15 +559,32 @@ def launch_update_after_exit(app_dir, current_pid, root=None,
     # staged helper is needed for .bat -> .exe migration and self-restart.
     installed_updater = app_dir / UPDATER_EXE
     bootstrapping = not (app_dir / APP_EXE).is_file()
-    if source_migration:
+    current_same_version = (
+        parse_version(read_local_version(app_dir)) ==
+        parse_version(pending["version"]))
+    if source_migration or current_same_version:
+        # The older installed helper may reject same-version updates.
+        # Verify the new helper's manifest hash before executing it.
+        try:
+            stage_meta = json.loads(Path(pending["manifest"]).read_text(encoding="utf-8"))
+            updater_meta = next(
+                row for row in stage_meta["files"]
+                if row.get("path", "").lower() == UPDATER_EXE.lower())
+            actual_hash = hashlib.sha256(trusted_updater.read_bytes()).hexdigest()
+            if updater_meta["sha256"].lower() != actual_hash or (
+                    updater_meta["bytes"] != trusted_updater.stat().st_size):
+                raise LauncherUpdateError("Staged helper failed checksum verification")
+        except (OSError, ValueError, TypeError, KeyError, StopIteration) as error:
+            raise LauncherUpdateError("Staged updater EXE is not verified") from error
         updater = trusted_updater
-        if source_dir is None or not (Path(source_dir) / "launcher.py").is_file():
-            raise LauncherUpdateError("Missing developer source directory for EXE migration.")
-        source = Path(source_dir).resolve()
-        if app_dir == source or _inside(source, app_dir):
-            raise LauncherUpdateError("Cannot install EXE into the developer source directory.")
-        if bootstrapping and app_dir != (root.parent / "app").resolve():
-            raise LauncherUpdateError("Fresh EXE install must use LOCALAPPDATA/CrashForgeLauncher/app.")
+        if source_migration:
+            if source_dir is None or not (Path(source_dir) / "launcher.py").is_file():
+                raise LauncherUpdateError("Missing developer source directory for EXE migration.")
+            source = Path(source_dir).resolve()
+            if app_dir == source or _inside(source, app_dir):
+                raise LauncherUpdateError("Cannot install EXE into the developer source directory.")
+            if bootstrapping and app_dir != (root.parent / "app").resolve():
+                raise LauncherUpdateError("Fresh EXE install must use LOCALAPPDATA/CrashForgeLauncher/app.")
     else:
         updater = installed_updater
         if not installed_updater.is_file() or bootstrapping:

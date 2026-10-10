@@ -25,8 +25,9 @@ class FeaturedReleaseTests(unittest.TestCase):
         self.assertIn('text="LATEST UPDATE  /  "', launcher)
         self.assertIn('text="MORE DETAILS IN NEWS', launcher)
         self.assertIn('real_launcher_changelog(', launcher)
-        self.assertIn('"latest_update.webp"', launcher)
-        self.assertIn('"assets", "news", "latest_update.webp"', news)
+        self.assertIn('news_history.artwork_file(', launcher)
+        self.assertIn('news_history.artwork_file(', news)
+        self.assertIn('news_history.local_publications(', news)
 
     def test_release_highlights_have_english_summary_and_version(self):
         version, highlights = forge_services.real_launcher_changelog(str(ROOT), limit=3)
@@ -38,6 +39,7 @@ class FeaturedReleaseTests(unittest.TestCase):
         script = (ROOT/"release_tools"/"build_windows.ps1").read_text(
             encoding="utf-8")
         self.assertIn('assets\\news\\latest_update.webp', script)
+        self.assertIn('assets\\news\\publications.json', script)
 
 
 if __name__ == "__main__":

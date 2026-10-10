@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "repository": "CarisaDemon/Crash-Forge-Launcher",
+  "publications": [
+    {
+      "version": "0.3.38",
+      "title": "Model Importer v1.8 — Redesigned",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.38",
+      "notes": [
+        "Model Importer v1.8: completely reorganized into a clearer Home screen with dedicated CHARACTER, KART, WHEELS and TRACKS sections.",
+        "Modular karts and wheels: improved OBJ workflows, editable offsets and four-wheel attachment positions, with optional kart color palettes that reuse the model instead of duplicating it.",
+        "Native track packages: import matching .LEV + .VRM files into separate packages without overwriting retail tracks; game-side custom track selection is still in development.",
+        "Crash Forge visual style: garage artwork and the taskbar icon are included in the bundled editor executable.",
+        "Single launcher update: the revamped editor installs and updates automatically with the Windows launcher. No separate downloads or changes to installed game mods.",
+        "Forge Hub remains live: the previous v0.3.37 announcement and its website shortcut remain available. More information is available in NEWS."
+      ]
+    },
+    {
+      "version": "0.3.37",
+      "title": "Forge Hub Website Is Live",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.37",
+      "notes": [
+        "Forge Hub website now available: browse community mods, modpacks, creators and mod categories from the website.",
+        "One-click website access: FORGE HUB now appears in the launcher header beside EDITOR and opens the official Forge Hub website.",
+        "Creator Studio: creators can submit or update their own mods and modpacks with metadata, pending moderator approval.",
+        "Moderation tools: verified moderators review releases, withdraw public listings and remove private ZIPs with a recorded reason. Creators are shown deletion notices and can dismiss them.",
+        "Game integration disclaimer: native .LEV/.VRM packages are supported for preparation, but adding custom tracks to the in-game track roster remains in development.",
+        "Windows launcher: keeps the bundled Model Importer, launcher updater, existing installed game files and user mods untouched."
+      ]
+    },
+    {
+      "version": "0.3.36",
+      "title": "Model Importer Bundled Again",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.36",
+      "notes": [
+        "Model Importer v1.7 is bundled again with the Windows launcher and updated automatically through the verified launcher updater.",
+        "Retains the actual Model Importer illustration on Home, short version highlights, and detailed NEWS.",
+        "Forge Hub moderation now allows optional Rights Evidence / review notes (maximum 1000 characters). Moderator access and explicit rights confirmation remain mandatory.",
+        "Original Crash Cove, game binaries, user mods, and update rollback behavior unchanged."
+      ]
+    },
+    {
+      "version": "0.3.35",
+      "title": "Featured Home Artwork",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.35",
+      "notes": [
+        "Home showcase: the latest update is illustrated with the real Model Importer screenshot.",
+        "Quick release highlights: current launcher version and a concise summary are visible on Home.",
+        "Full news below: open NEWS for more detailed changes and matching artwork.",
+        "Optional Model Importer: it is no longer included in the launcher ZIP. Click INSTALL TOOL to download it only when wanted.",
+        "SHA-256 verification: Model Importer downloads separately from the official GitHub release and is verified before installation.",
+        "OPEN TOOL / UPDATE TOOL: installed tools remain available, with optional updates when a new launcher release is available.",
+        "Same Windows updater, mods, native LEV/VRM track importer and Crash Cove behavior as before."
+      ]
+    },
+    {
+      "version": "0.3.34",
+      "title": "Native Track Importer Improvements",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.34",
+      "notes": [
+        "Editor > Model Importer card now clearly displays CHARACTERS / KARTS / TRACKS.",
+        "Updated tool description: import characters, customize karts and package native .LEV/.VRM track files.",
+        "Model Importer v1.7 keeps its native LEV/VRM track staging workflow; OBJ is not used for track packages.",
+        "Original Crash Cove remains untouched. Game-side custom track registration and selection remain a separate development task.",
+        "Preserves launcher auto-updater, Modpacks and the large garage-backed NEWS artwork."
+      ]
+    },
+    {
+      "version": "0.3.33",
+      "title": "LEV / VRM Track Packages",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.33",
+      "notes": [
+        "Crash Forge Model Importer v1.7: NEW native CTR track packager for paired .LEV and .VRM files; OBJ track support deliberately disabled.",
+        "Verify native file structure and SHA-256, preserve original retail levels, and back up older same-ID track packages before replacement.",
+        "Model Importer ships with the launcher under EDITOR > MODEL IMPORTER, so future tool improvements update through the verified launcher auto-updater.",
+        "Assembly Lane's legacy Crash Cove takeover is retired in the local game build; Crash Cove stays original. This game fix is separate from the launcher release.",
+        "Track package import is preparation only; game-side custom track registration/selection is still required for playability.",
+        "Previous v0.3.32 large NEWS cover and UI are preserved."
+      ]
+    },
+    {
+      "version": "0.3.32",
+      "title": "Kart Color Variants",
+      "date": "2026-10-09",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.32",
+      "notes": [
+        "Model Importer v1.6 now ships inside the Windows launcher and opens from EDITOR.",
+        "New kart color palette importer: one OBJ, alternate textures, independent .ini variants without duplicating Blue.",
+        "Future bundled Model Importer updates arrive automatically through launcher updates.",
+        "Redesigned NEWS: large garage artwork and concise release highlights at the front.",
+        "Preserves the verified self-updater, rollback, Modpacks, gameplay paths and Windows EXE restart."
+      ]
+    },
+    {
+      "version": "0.3.31",
+      "title": "Forge Hub Modpacks",
+      "date": "2026-10-09",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.31",
+      "notes": [
+        "NEW: Modpacks in Forge Hub. One verified ZIP can install characters, karts, wheels and tracks in their own folders, preserving each mod's .ini.",
+        "Modpack installs include preflight validation, backups and rollback if anything fails.",
+        "PLAY and GAME UPDATE have clearer orange/grey emphasis; the large UPDATE button stays under PLAY.",
+        "Cleaner Settings with the independent launcher auto-updater and no duplicate game-update controls.",
+        "Branded English PLAY ANYWAY / CANCEL warning when a newer verified game version is available.",
+        "Background original CTR-U (USA) file check logs results without blocking offline play.",
+        "Launcher updates automatically restart the updated .exe after closing the running launcher."
+      ]
+    },
+    {
+      "version": "0.3.29",
+      "title": "Windows Auto-Updater",
+      "date": "2026-10-09",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.29",
+      "notes": [
+        "Windows EXE with no console window.",
+        "Automatic launcher updates with SHA-256 verification.",
+        "Automatic restart as EXE after a successful update.",
+        "One-time migration from BAT to EXE.",
+        "Better protection for settings, mods and update backups."
+      ]
+    },
+    {
+      "version": "0.3.28",
+      "title": "Launcher Windows Release",
+      "date": "2026-10-09",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.28",
+      "notes": []
+    }
+  ]
+}

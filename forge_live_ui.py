@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog
 import forge_services as services
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
+import forge_news_history as news_history
 import forge_iso_integrity as iso_integrity
 from forge_version_dialog import ask_play_outdated
 
@@ -41,6 +42,11 @@ class ForgeLiveMixin:
         self.remote_mods = []
         self.remote_news = []
         self.github_release_news = []
+        # Persistent, append-only history across launcher updates and offline use.
+        self.launcher_news_history = news_history.local_publications(
+            self._forge_base_dir())
+        self._news_refresh_busy = False
+        self._news_art_photos = {}
         self.remote_feed = {}
         self.online_status = "PUBLIC FEED NOT CONFIGURED"
         self.online_queue = queue.Queue()
@@ -69,6 +75,8 @@ class ForgeLiveMixin:
         if getattr(self, "_auto_recovered_game_path", False):
             self.status_label.configure(
                 text="Detected an existing ctr-native.exe and recovered its install folder.")
+        self.after(1300, self._refresh_news_history)
+        self.after(3600000, self._scheduled_news_history_check)
         self.after(1600, self._startup_release_check)
         self.after(2700, self._startup_launcher_update_check)
         self.after(3600000, self._scheduled_launcher_update_check)
@@ -177,131 +185,161 @@ class ForgeLiveMixin:
             })
         return result
 
+    def _refresh_news_history(self):
+        """Refresh NEWS in a worker; never confuse public articles with updates."""
+        if getattr(self, "_news_refresh_busy", False):
+            return
+        self._news_refresh_busy = True
+
+        def worker():
+            try:
+                # The updater's existing strict URL allowlist and response limit
+                # are reused; this call does NOT stage or download a launcher.
+                raw = launcher_updates._open_json(launcher_updates.RELEASES_API)
+                published, pictures = news_history.parse_github_history(raw)
+                if not published:
+                    raise ValueError("No published launcher releases")
+                merged = news_history.save_history(published, self._forge_base_dir())
+                news_history.sync_release_artwork(pictures)
+                self.online_queue.put(("news_history_ok", merged))
+            except (ValueError, OSError, TypeError) as error:
+                self.online_queue.put(("news_history_error", str(error)))
+
+        threading.Thread(target=worker, daemon=True,
+                         name="ForgeReleaseNewsHistory").start()
+
+    def _scheduled_news_history_check(self):
+        """Add future publications without removing or duplicating older ones."""
+        self._refresh_news_history()
+        self.after(3600000, self._scheduled_news_history_check)
+
     def _render_real_news(self):
-        """Large top-story artwork and concise, readable release notes."""
+        """Scrollable release archive: one article per published version."""
         if not hasattr(self, "news_rows"):
             return
+        from tkinter import Frame, Label, Canvas
         for child in self.news_rows.winfo_children():
             child.destroy()
-        from tkinter import Frame, Label
-        version, notes = services.real_launcher_changelog(
-            self._forge_base_dir(), limit=8)
-        headline = {
-            "category": "LATEST LAUNCHER UPDATE",
-            "title": ("Model Importer v1.8 — Redesigned" if version == "v0.3.38"
-                      else "Forge Hub Website Is Live" if version == "v0.3.37"
-                      else "Crash Forge Launcher " + (version or "")),
-            "date": "",
-            "description": "\\n".join("- " + str(line) for line in notes[:8])
-                if notes else "Latest launcher changes and tools.",
-        }
-        items = [headline] + (self.github_release_news +
-                 (self.remote_news if self.remote_news else
-                  self._live_news_fallback()[1:]))[:2]
-        for index, item in enumerate(items):
+        self._news_art_photos = {}
+
+        history = news_history.merge_history(
+            news_history.local_publications(self._forge_base_dir()),
+            getattr(self, "launcher_news_history", []))
+        self.launcher_news_history = history
+
+        additional = self.github_release_news + self.remote_news
+        for index, item in enumerate(history):
+            version = item["version"]
+            # A publication keeps its illustration even after newer posts arrive.
+            is_featured = (index < 2 or
+                           bool(news_history.artwork_file(
+                               self._forge_base_dir(), version)))
             row = Frame(self.news_rows, bg="#111419",
                         highlightbackground="#30363E", highlightthickness=1)
-            row.pack(fill="x", pady=(0, 8), padx=1)
-            if index == 0:
-                banner = __import__("tkinter").Canvas(
-                    row, height=174, bg="#111419", bd=0, highlightthickness=0)
-                banner.pack(fill="x")
-                image_path = os.path.join(self._forge_base_dir(),
-                                          "assets", "news", "latest_update.webp")
-                if not os.path.isfile(image_path):
-                    image_path = os.path.join(
-                        self._forge_base_dir(), "_internal", "assets",
-                        "news", "latest_update.webp")
-                if not os.path.isfile(image_path):
-                    image_path = os.path.join(
-                        self._forge_base_dir(), "assets", "Fondo.png")
+            row.pack(fill="x", pady=(0, 9), padx=1)
 
-                def paint_banner(event=None, canvas=banner, image_file=image_path):
-                    width = max(240, canvas.winfo_width())
-                    height = 174
+            if is_featured:
+                image_path = (news_history.artwork_file(self._forge_base_dir(), version)
+                              or news_history.garage_fallback(self._forge_base_dir()))
+                banner = Canvas(row, height=184, bg="#0D1014", bd=0,
+                                highlightthickness=0)
+                banner.pack(fill="x")
+
+                date = item["date"]
+                def paint_banner(event=None, canvas=banner, image_file=image_path,
+                                 release_version=version, published=date):
+                    width = max(120, canvas.winfo_width())
+                    height = 184
                     canvas.delete("all")
-                    if os.path.isfile(image_file):
+                    canvas.create_rectangle(0, 0, width, height,
+                                            fill="#0B0F13", outline="")
+                    if image_file and os.path.isfile(image_file):
                         try:
-                            from PIL import Image, ImageTk, ImageOps, ImageEnhance
-                            picture = Image.open(image_file).convert("RGB")
-                            picture = ImageOps.fit(
-                                picture, (width, height),
-                                method=Image.Resampling.LANCZOS)
-                            picture = ImageEnhance.Brightness(picture).enhance(0.56)
-                            self._news_hero_photo = ImageTk.PhotoImage(picture)
-                            canvas.create_image(0, 0, image=self._news_hero_photo,
-                                                anchor="nw")
-                        except Exception:
-                            canvas.create_rectangle(0, 0, width, height,
-                                fill="#17191d", outline="")
-                    else:
-                        canvas.create_rectangle(0, 0, width, height,
-                                                fill="#17191d", outline="")
+                            from PIL import Image, ImageTk, ImageOps
+                            with Image.open(image_file) as original:
+                                # Show the COMPLETE user illustration, no crop.
+                                picture = ImageOps.contain(
+                                    original.convert("RGB"),
+                                    (max(width - 16, 1), 143),
+                                    method=Image.Resampling.LANCZOS)
+                            photo = ImageTk.PhotoImage(picture)
+                            self._news_art_photos[release_version] = photo
+                            canvas.create_image(width//2, 72, image=photo,
+                                                anchor="center")
+                        except (ImportError, OSError, ValueError):
+                            pass
                     canvas.create_rectangle(0, 0, 5, height,
-                                            fill="#ff6a00", outline="")
-                    canvas.create_text(20, 24, text="CRASH FORGE  /  UPDATE",
-                                       fill="#ff9b53", anchor="w",
-                                       font=("Bahnschrift SemiBold", 10))
-                    canvas.create_text(20, height-41,
-                                       text=("LAUNCHER  " + (version or "NEW")),
-                                       fill="#f4f4f1", anchor="w",
-                                       font=("Bahnschrift SemiBold", 16))
-                    canvas.create_text(20, height-19,
-                                       text="LATEST CHANGES  +  NEW TOOLS",
-                                       fill="#bdc4cd", anchor="w",
-                                       font=("Bahnschrift", 8))
+                                            fill="#FF7200", outline="")
+                    canvas.create_rectangle(0, 146, width, height,
+                                            fill="#0B0E12", outline="")
+                    canvas.create_text(
+                        15, 166, anchor="w",
+                        text="CRASH FORGE  /  LAUNCHER v" + release_version,
+                        fill="#F3F2EF", font=("Bahnschrift SemiBold", 11))
+                    canvas.create_text(width - 12, 166, anchor="e",
+                                       text=published,
+                                       fill="#A5ADB7", font=("Bahnschrift", 8))
+
                 banner.bind("<Configure>", paint_banner)
-                body = Frame(row, bg="#111419")
-                body.pack(fill="x", padx=12, pady=(9, 12))
-                Label(body, text=item["title"], bg="#111419",
-                      fg="#f5f5f0", font=("Bahnschrift SemiBold", 10),
-                      anchor="w", wraplength=380, justify="left").pack(
-                          anchor="w", pady=(0, 5))
-                Label(body, text=item["description"].replace("\\n", "\n"),
-                      bg="#111419", fg="#b8bfc6",
-                      font=("Bahnschrift", 9), anchor="w",
-                      wraplength=400, justify="left").pack(fill="x", anchor="w")
-                continue
+
             body = Frame(row, bg="#111419")
-            body.pack(side="left", fill="both", expand=True, padx=9, pady=7)
-            category = str(item.get("category") or "NEWS").upper()
-            title = str(item.get("title") or "")[:90]
-            Label(body, text=category, bg="#111419", fg="#e2a36a",
-                  font=("Bahnschrift SemiBold", 7), anchor="w").pack(anchor="w")
-            Label(body, text=title, bg="#111419", fg="#e5e5e1",
-                  font=("Bahnschrift SemiBold", 9), anchor="w",
-                  wraplength=310, justify="left").pack(anchor="w")
-            description = str(item.get("description") or "")[:300]
-            if description:
-                Label(body, text=description, bg="#111419", fg="#9aa2aa",
-                      font=("Bahnschrift", 8), wraplength=320,
-                      justify="left", anchor="w").pack(anchor="w", pady=(4, 0))
-            when = str(item.get("date") or "").strip()
-            if when:
-                Label(row, text=when, bg="#111419", fg="#858990",
-                      font=("Bahnschrift", 7)).pack(side="right", padx=8)
-            url = item.get("url", "")
-            try:
-                url = services.checked_https_url(url)
-            except services.FeedError:
-                url = ""
-            if url:
-                row.bind("<Button-1>", lambda e, link=url: webbrowser.open(link))
-                body.bind("<Button-1>", lambda e, link=url: webbrowser.open(link))
-                row.configure(cursor="hand2")
+            body.pack(fill="x", padx=13, pady=(9, 11))
+            caption = ("LATEST PUBLICATION" if index == 0 else
+                       "PREVIOUS PUBLICATION" if index == 1 else
+                       "RELEASE HISTORY  /  v" + version)
+            Label(body, text=caption, bg="#111419", fg="#F49A54",
+                  font=("Bahnschrift SemiBold", 8), anchor="w"
+                  ).pack(fill="x", pady=(0, 5))
+            Label(body, text=item["title"], bg="#111419", fg="#F4F3F0",
+                  font=("Bahnschrift SemiBold", 11 if is_featured else 10),
+                  anchor="w", justify="left",
+                  wraplength=420).pack(fill="x", anchor="w")
+            notes = item.get("notes", [])
+            if notes:
+                summary = "\n".join("• " + str(note) for note in
+                                    notes[:4 if is_featured else 2])
+            else:
+                summary = "Read the full release notes on GitHub."
+            Label(body, text=summary,
+                  bg="#111419", fg="#B6BDC5", font=("Bahnschrift", 9),
+                  justify="left", wraplength=420, anchor="w"
+                  ).pack(fill="x", pady=(7, 6))
+            url = item["url"]
+            open_link = Label(body, text="READ FULL UPDATE  ↗",
+                              bg="#111419", fg="#E98D4E",
+                              font=("Bahnschrift SemiBold", 8),
+                              cursor="hand2", anchor="w")
+            open_link.pack(anchor="w")
+            open_link.bind("<Button-1>",
+                           lambda event, link=url: webbrowser.open(link))
+
+        # Keep official game releases and public community feed items too.
+        for entry in additional[:8]:
+            row = Frame(self.news_rows, bg="#101317",
+                        highlightbackground="#2F363F", highlightthickness=1)
+            row.pack(fill="x", pady=(0, 8), padx=1)
+            Label(row, text=str(entry.get("category") or "COMMUNITY").upper(),
+                  bg="#101317", fg="#EFA570",
+                  font=("Bahnschrift SemiBold", 8), anchor="w"
+                  ).pack(fill="x", padx=12, pady=(9, 2))
+            Label(row, text=str(entry.get("title") or "")[:105],
+                  bg="#101317", fg="#F4F2EE", justify="left",
+                  font=("Bahnschrift SemiBold", 10),
+                  wraplength=415, anchor="w"
+                  ).pack(fill="x", padx=12)
+            Label(row, text=str(entry.get("description") or "")[:360],
+                  bg="#101317", fg="#A4ACB5",
+                  font=("Bahnschrift", 8), justify="left",
+                  wraplength=415, anchor="w"
+                  ).pack(fill="x", padx=12, pady=(4, 10))
         if hasattr(self, "_resize_news_content"):
             self._resize_news_content()
+        if hasattr(self, "hero_canvas"):
+            self._paint_hero()
 
     def _open_all_news(self):
-        if self.github_release_news or self.remote_news:
-            for entry in self.github_release_news + self.remote_news:
-                try:
-                    link = services.checked_https_url(entry.get("url"))
-                    webbrowser.open(link)
-                    return
-                except services.FeedError:
-                    pass
-        self.status_label.configure(text="No published news link is available yet.")
+        """Show chronological launcher publications, not just one news item."""
+        webbrowser.open(news_history.GITHUB_RELEASES)
 
     def _refresh_hub_source_status(self):
         label = getattr(self, "hub_source_label", None)
@@ -371,7 +409,15 @@ class ForgeLiveMixin:
                 event, data = self.online_queue.get_nowait()
             except queue.Empty:
                 break
-            if event == "feed_ok":
+            if event == "news_history_ok":
+                self._news_refresh_busy = False
+                self.launcher_news_history = news_history.merge_history(
+                    self.launcher_news_history, data)
+                self._render_real_news()
+            elif event == "news_history_error":
+                self._news_refresh_busy = False
+                # Local archive remains available if GitHub is down.
+            elif event == "feed_ok":
                 url, feed, news, mods = data
                 self.online_busy = False
                 # A response from the old feed URL must not replace the new one.
@@ -415,7 +461,11 @@ class ForgeLiveMixin:
                     result = ("Launcher v" + pending["version"] +
                               " verified; the updated EXE will open automatically " +
                               "after you close this launcher.")
-                elif release and launcher_updates.newer_release(release, installed):
+                elif release and launcher_updates.update_required(
+                    release, installed,
+                    app_dir=(self._forge_base_dir() if portable else
+                             launcher_updates.portable_target_for_source(
+                                 self._forge_base_dir()))):
                     result = ("Launcher v" + release["version"] +
                               " available. " +
                               ("Auto-update disabled." if not self.launcher_auto_update else
@@ -563,9 +613,8 @@ class ForgeLiveMixin:
             else:
                 version_dir = launcher_updates.portable_target_for_source(
                     self._forge_base_dir())
-            if pending and launcher_updates.newer_release(
-                    {"version": pending["version"]},
-                    launcher_updates.read_local_version(version_dir)):
+            if pending and launcher_updates.pending_update_required(
+                    pending, version_dir):
                 self.launcher_update_ready = pending
                 self._set_restart_buttons_enabled(True)
                 self.launcher_update_status_var.set(
@@ -606,7 +655,8 @@ class ForgeLiveMixin:
             try:
                 release = launcher_updates.fetch_latest()
                 pending = None
-                if release and launcher_updates.newer_release(release, installed):
+                if release and launcher_updates.update_required(
+                        release, installed, app_dir=install_dir):
                     # In source/.bat mode this stages a SEPARATE portable
                     # installation. It never overwrites .py, .bat or source assets.
                     if auto:
@@ -615,7 +665,8 @@ class ForgeLiveMixin:
                                 ("launcher_update_progress",
                                  (phase, done, total, release["version"])))
                         pending = launcher_updates.stage_release(
-                            release, installed, progress=report)
+                            release, installed, progress=report,
+                            app_dir=install_dir)
                 self.online_queue.put(
                     ("launcher_update_ok",
                      (release, pending, installed, manual, portable)))

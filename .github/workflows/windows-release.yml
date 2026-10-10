@@ -87,3 +87,50 @@ jobs:
           files: |
             build/release/Crash-Forge-Launcher-Windows.zip
             build/release/Crash-Forge-Launcher-Windows.zip.sha256
+
+
+      - name: Attach images to the original two releases
+        # No new release versions: replace image assets on existing tags.
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          (github.ref == 'refs/heads/main' &&
+           contains(github.event.head_commit.message, '[publish-launcher]'))
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          foreach ($version in @("0.3.37", "0.3.38")) {
+            $file = Join-Path "assets/news" ("forge-news-v" + $version + ".webp")
+            if (Test-Path -LiteralPath $file) {
+              gh release upload ("v" + $version) $file --clobber --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) {
+                throw "Could not replace existing-release artwork v$version"
+              }
+              # Put the illustration IN the existing release description;
+              # keep the previous changelog intact and never create a new tag.
+              $prior = gh release view ("v" + $version) --json body --jq ".body" --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE -ne 0) {
+                throw "Could not read existing release notes v$version"
+              }
+              $body = $prior -join "`n"
+              $filename = Split-Path $file -Leaf
+              if (-not $body.Contains($filename)) {
+                $caption = if ($version -eq "0.3.37") { "Forge Hub Website" } else { "Model Importer v1.8" }
+                $art = "![Crash Forge " + $caption + "](https://github.com/" + $env:GITHUB_REPOSITORY + "/releases/download/v" + $version + "/" + $filename + ")"
+                $notes = Join-Path $env:RUNNER_TEMP ("cfr-existing-release-v" + $version + ".md")
+                [IO.File]::WriteAllText($notes, ($art + "`n`n" + $body), [Text.Encoding]::UTF8)
+                gh release edit ("v" + $version) --notes-file $notes --repo $env:GITHUB_REPOSITORY
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Could not update original release description v$version"
+                }
+              }
+            }
+          }
+
+          $notes37 = "assets/news/v0.3.37-release-notes.md"
+          if (Test-Path -LiteralPath $notes37) {
+            gh release edit "v0.3.37" --notes-file $notes37 --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not refresh original v0.3.37 description"
+            }
+          }
