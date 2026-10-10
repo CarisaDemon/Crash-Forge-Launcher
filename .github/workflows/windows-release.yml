@@ -69,6 +69,8 @@ jobs:
           path: |
             build/release/Crash-Forge-Launcher-Windows.zip
             build/release/Crash-Forge-Launcher-Windows.zip.sha256
+            build/release/CrashForgeModelImporter.exe
+            build/release/CrashForgeModelImporter.exe.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -87,3 +89,5 @@ jobs:
           files: |
             build/release/Crash-Forge-Launcher-Windows.zip
             build/release/Crash-Forge-Launcher-Windows.zip.sha256
+            build/release/CrashForgeModelImporter.exe
+            build/release/CrashForgeModelImporter.exe.sha256

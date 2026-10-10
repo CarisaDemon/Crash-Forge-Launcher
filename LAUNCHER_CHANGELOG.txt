@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.35
+- Feature the actual Model Importer screenshot and update summary on Home.
+- Make Model Importer optional: download only after clicking INSTALL TOOL.
+- Verify the standalone tool with SHA-256; open or update it on demand.
+- Show full release details and matching illustration in NEWS.
+- Keep the layout readable when resized, including 4:3 windows.
+
 v0.3.34
 - Display CHARACTERS / KARTS / TRACKS on the Model Importer tile in the launcher editor.
 - Clarify native LEV/VRM track package support in the tile description.

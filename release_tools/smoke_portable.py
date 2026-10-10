@@ -65,12 +65,24 @@ def main():
     assert result.returncode==0,(
         "Packaged launcher failed background smoke: "+result.stderr[-1500:])
     print("PASS packaged launcher EXE self-test without showing window")
-    model_importer = PORTABLE/"_internal"/"editor_tools"/"CrashForgeModelImporter.exe"
-    assert model_importer.is_file(), "Bundled Model Importer is missing"
+    featured = PORTABLE/"_internal"/"assets"/"news"/"latest_update.webp"
+    assert featured.is_file(), "Featured artwork missing from internal resources"
+    assert not (PORTABLE/"assets"/"news"/"latest_update.webp").exists(), (
+        "Featured image must not break legacy launcher asset allowlist")
+    print("PASS featured editor screenshot stored safely in _internal resources")
+    model_importer = BUILD/"release"/"CrashForgeModelImporter.exe"
+    assert model_importer.is_file(), "Optional Model Importer release asset missing"
+    assert not (PORTABLE/"_internal"/"editor_tools"/"CrashForgeModelImporter.exe").exists(), (
+        "Optional Model Importer must NOT be bundled inside launcher ZIP")
+    sidecar=(BUILD/"release"/"CrashForgeModelImporter.exe.sha256").read_text(
+        encoding="ascii").strip()
+    sha=hashlib.sha256(model_importer.read_bytes()).hexdigest()
+    assert sidecar == sha+"  CrashForgeModelImporter.exe", (
+        "Model Importer SHA-256 sidecar does not match")
     assert_windows_gui_subsystem(model_importer)
     result = no_window_run([str(model_importer), "--self-test"], timeout=55)
-    assert result.returncode == 0, "Bundled Model Importer failed headless self-test"
-    print("PASS bundled Model Importer v1.6 self-test (no window)")
+    assert result.returncode == 0, "Optional Model Importer failed headless self-test"
+    print("PASS optional Model Importer independently verifiable EXE (no window)")
 
     binary=release_zip()
     expected=hashlib.sha256(binary).hexdigest()

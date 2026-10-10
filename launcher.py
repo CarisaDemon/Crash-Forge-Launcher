@@ -1,21 +1,25 @@
 import os
 import sys
 import json
+import textwrap
+import threading
 import ctypes
 from datetime import datetime
 import tkinter as tk
-from tkinter import font as tkfont, filedialog
+from tkinter import font as tkfont, filedialog, messagebox
 from forge_live_ui import ForgeLiveMixin
 import forge_services as services
 import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
+import forge_optional_tools as optional_tools
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageTk, ImageOps
 except ImportError:
     Image = None
     ImageTk = None
+    ImageOps = None
 
 BASE_DIR = (os.path.dirname(os.path.abspath(sys.executable))
             if getattr(sys, "frozen", False)
@@ -1420,6 +1424,123 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 text="Could not open the selected editor tool."
             )
 
+    def _model_importer_local_path(self):
+        """Choose only installed official tools; never perform a network request."""
+        official = optional_tools.installed_path()
+        if official is not None:
+            return str(official)
+        # Older official launcher ZIPs bundled an EXE. Preserve that user's
+        # working installation instead of silently removing their tool.
+        legacy = os.path.join(BASE_DIR, "_internal", "editor_tools",
+                              optional_tools.TOOL_EXE)
+        if os.path.isfile(legacy):
+            return legacy
+        if not getattr(sys, "frozen", False):
+            source = os.path.abspath(os.path.join(
+                BASE_DIR, "..", "Crash Forge Character Tool",
+                "Open Crash Forge Character Tool.bat"))
+            if os.path.isfile(source):
+                return source
+        return None
+
+    def _model_importer_button_text(self):
+        local = self._model_importer_local_path()
+        if not local:
+            return "INSTALL TOOL"
+        version = optional_tools.installed_version()
+        if (version and launcher_updates.parse_version(version)
+                < launcher_updates.parse_version(APP_VERSION)):
+            return "UPDATE TOOL"
+        return "OPEN TOOL"
+
+    def _install_or_open_model_importer(self):
+        if getattr(self, "_model_importer_busy", False):
+            return
+        local = self._model_importer_local_path()
+        version = optional_tools.installed_version()
+        if local and (not version or
+                      launcher_updates.parse_version(version)
+                      >= launcher_updates.parse_version(APP_VERSION)):
+            self._launch_editor_tool(local)
+            return
+        if local:
+            confirmed = messagebox.askyesno(
+                "Crash Forge Model Importer",
+                "An updated Model Importer is available.\n\n"
+                "Download it from the official Crash Forge Launcher "
+                "GitHub release?\n\n"
+                "Choose No to keep using your installed version.",
+                parent=getattr(self, "_editor_window", self))
+            if not confirmed:
+                self._launch_editor_tool(local)
+                return
+        else:
+            confirmed = messagebox.askyesno(
+                "Optional Model Importer",
+                "Install Model Importer?\n\n"
+                "This tool is optional and is NOT included in the "
+                "launcher download.\n\n"
+                "It will download separately from the official "
+                "Crash Forge GitHub Release and be verified with SHA-256.",
+                parent=getattr(self, "_editor_window", self))
+            if not confirmed:
+                return
+
+        self._model_importer_busy = True
+        self._model_importer_status("Connecting to official GitHub release...")
+        button = getattr(self, "_editor_model_button", None)
+        try:
+            if button and button.winfo_exists():
+                button.configure(text="DOWNLOADING", fg="#B0B7BD",
+                                 cursor="arrow")
+        except tk.TclError:
+            pass
+
+        def worker():
+            try:
+                release = optional_tools.find_official_tool()
+                installed = optional_tools.install_tool(release)
+                self.after(0, lambda: self._model_importer_complete(str(installed)))
+            except (launcher_updates.LauncherUpdateError, OSError,
+                    ValueError) as exc:
+                error = str(exc)
+                self.after(0, lambda msg=error: self._model_importer_failed(msg))
+
+        threading.Thread(target=worker, name="optional-model-importer",
+                         daemon=True).start()
+
+    def _model_importer_status(self, text, error=False):
+        label = getattr(self, "_editor_status_label", None)
+        try:
+            if label and label.winfo_exists():
+                label.configure(text=text, fg="#FF7A61" if error else "#ADB2B9")
+        except tk.TclError:
+            pass
+
+    def _model_importer_complete(self, path):
+        self._model_importer_busy = False
+        self._model_importer_status("Verified Model Importer installed successfully.")
+        button = getattr(self, "_editor_model_button", None)
+        try:
+            if button and button.winfo_exists():
+                button.configure(text="OPEN TOOL", fg="#FFF1E4",
+                                 cursor="hand2")
+        except tk.TclError:
+            pass
+        self._launch_editor_tool(path)
+
+    def _model_importer_failed(self, reason):
+        self._model_importer_busy = False
+        self._model_importer_status("Model Importer download failed: " +
+                                    reason[:130], error=True)
+        button = getattr(self, "_editor_model_button", None)
+        try:
+            if button and button.winfo_exists():
+                button.configure(text=self._model_importer_button_text(),
+                                 fg="#FFF1E4", cursor="hand2")
+        except tk.TclError:
+            pass
+
     def _show_editor_selector(self):
         current = getattr(self, "_editor_window", None)
         if current is not None:
@@ -1588,7 +1709,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         cards_host.grid_columnconfigure(1, weight=1, uniform="tool")
         cards_host.grid_columnconfigure(2, weight=1, uniform="tool")
 
-        def make_tool_card(col, title, subtitle, detail, action=None, disabled=False):
+        def make_tool_card(col, title, subtitle, detail, action=None, disabled=False, button_label=None):
             edge = "#343A42" if disabled else "#4A5058"
             card = tk.Frame(
                 cards_host,
@@ -1693,7 +1814,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 justify="center",
             ).pack(padx=12)
 
-            button_text = "COMING SOON" if disabled else "OPEN TOOL"
+            button_text = "COMING SOON" if disabled else (button_label or "OPEN TOOL")
             button = tk.Label(
                 card,
                 text=button_text,
@@ -1707,6 +1828,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 cursor="arrow" if disabled else "hand2",
             )
             button.pack(side="bottom", pady=18)
+            if col == 2:
+                self._editor_model_button = button
 
             if not disabled and action is not None:
                 widgets = [card, icon, button]
@@ -1748,19 +1871,13 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     CSEQ_TOOL_PATH or os.path.join(
                         self.game_install_path, "tools", "cfr_midi_tool", "run_tool.bat")),
         )
-        model_tool = os.path.join(BASE_DIR, "_internal", "editor_tools",
-                                  "CrashForgeModelImporter.exe")
-        if not os.path.isfile(model_tool) and not getattr(sys, "frozen", False):
-            model_tool = os.path.abspath(os.path.join(
-                BASE_DIR, "..", "Crash Forge Character Tool",
-                "Open Crash Forge Character Tool.bat"))
         make_tool_card(
             2,
             "MODEL IMPORTER",
             "CHARACTERS / KARTS / TRACKS",
-            "Import characters, customize karts and package native .LEV/.VRM tracks.",
-            action=(lambda: self._launch_editor_tool(model_tool)),
-            disabled=not os.path.isfile(model_tool),
+            "Optional tool for characters, kart colors and native .LEV/.VRM tracks.",
+            action=self._install_or_open_model_importer,
+            button_label=self._model_importer_button_text(),
         )
 
         self._editor_status_label = tk.Label(
@@ -2302,170 +2419,158 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             anchor="w"
         ).pack(anchor="w", pady=(3, 0))
 
+
     def _paint_hero(self, event=None):
+        """Feature the latest launcher update over the actual editor screenshot."""
         c = event.widget if event is not None else getattr(self, "hero_canvas", None)
         if c is None:
             return
-
         c.delete("hero")
         w = max(c.winfo_width(), 1)
         h = max(c.winfo_height(), 1)
         s = getattr(self, "ui_scale", 1.0)
 
         if not self._draw_fondo_image(c, "hero"):
-            c.create_rectangle(
-                0, 0, w, h,
-                fill="#0B0D10",
-                outline="",
-                tags="hero",
-            )
+            c.create_rectangle(0, 0, w, h,
+                               fill="#0B0D10", outline="", tags="hero")
 
-        # Low-key dark plate on the left so copy remains readable without
-        # hiding the workshop background.
-        plate_w = min(max(410, int(w * 0.48)), 610)
-        c.create_polygon(
-            0, 0,
-            plate_w, 0,
-            plate_w - 95, h,
-            0, h,
-            fill="#05070A",
-            stipple="gray50",
-            outline="",
-            tags="hero",
-        )
+        # The illustration is the user's actual Model Importer screenshot.
+        # Keep it complete (contain rather than cover) so all three tools
+        # remain recognizable in resizable / 4:3 windows.
+        art_x = min(w - 205, max(250, int(round(w * 0.42))))
+        art_y = 81 if h >= 310 else 41
+        art_w = max(1, w - art_x - 19)
+        art_h = max(1, h - art_y - 49)
+        if art_w >= 170 and art_h >= 75:
+            c.create_rectangle(art_x-4, art_y-4,
+                               art_x+art_w+4, art_y+art_h+4,
+                               fill="#0C0F14", outline="#4B5057",
+                               width=1, tags="hero")
+            if Image is not None and ImageTk is not None:
+                image_path = os.path.join(BASE_DIR, "assets", "news",
+                                          "latest_update.webp")
+                if getattr(sys, "frozen", False):
+                    image_path = os.path.join(
+                        BASE_DIR, "_internal", "assets", "news",
+                        "latest_update.webp")
+                try:
+                    if not hasattr(self, "_hero_update_source"):
+                        self._hero_update_source = (
+                            Image.open(image_path).convert("RGB")
+                            if os.path.isfile(image_path) else None)
+                    if self._hero_update_source is not None:
+                        bounds = (art_w, art_h)
+                        if getattr(self, "_hero_update_bounds", None) != bounds:
+                            fitted = ImageOps.contain(
+                                self._hero_update_source, bounds,
+                                method=Image.Resampling.LANCZOS)
+                            self._hero_update_photo = ImageTk.PhotoImage(fitted)
+                            self._hero_update_bounds = bounds
+                        c.create_image(art_x + art_w//2, art_y + art_h//2,
+                                       image=self._hero_update_photo,
+                                       anchor="center", tags="hero")
+                except (OSError, ValueError, tk.TclError):
+                    # Keep launcher usable even when an optional graphic is missing.
+                    pass
+            c.create_rectangle(art_x-4, art_y-4,
+                               art_x+art_w+4, art_y+art_h+4,
+                               outline="#484C53", width=1, tags="hero")
 
-        # Fine border only — no old technical grid or orange slash wall.
-        c.create_rectangle(
-            8, 8, w - 8, h - 8,
-            outline="#343941",
-            width=1,
-            tags="hero",
-        )
-        c.create_line(
-            8, 8, min(w - 8, 290), 8,
-            fill=COLORS["orange"],
-            width=2,
-            tags="hero",
-        )
+        # Opaque copy plate separates small readable text from the photo.
+        left_w = max(280, min(w-110, art_x+9))
+        c.create_polygon(0, 0, left_w, 0, left_w-18, h, 0, h,
+                         fill="#080A0E", outline="", tags="hero")
+        c.create_rectangle(8, 8, w-8, h-8,
+                           outline="#343941", width=1, tags="hero")
+        c.create_line(8, 8, min(w-8, 275), 8,
+                      fill=COLORS["orange"], width=2, tags="hero")
 
-        c.create_rectangle(
-            38, 42, 44, 58,
-            fill=COLORS["orange"],
-            outline="",
-            tags="hero",
-        )
-        c.create_text(
-            56, 50,
-            text="CRASH FORGE  //  RACING",
-            anchor="w",
-            fill="#BDC1C6",
-            font=("Bahnschrift SemiBold", max(8, int(round(9 * s)))),
-            tags="hero",
-        )
+        if not hasattr(self, "_hero_release_content"):
+            self._hero_release_content = services.real_launcher_changelog(
+                BASE_DIR, limit=3)
+        release, highlights = self._hero_release_content
+        release = release or ("v" + APP_VERSION)
 
-        c.create_text(
-            38, 103,
-            text="BUILT TO RACE.",
-            anchor="w",
-            fill="#F4F2ED",
-            font=("Bahnschrift SemiBold", max(24, int(round(31 * s)))),
-            tags="hero",
-        )
-        c.create_text(
-            38, 142,
-            text="FORGED TO MOD.",
-            anchor="w",
-            fill=COLORS["orange"],
-            font=("Bahnschrift SemiBold", max(17, int(round(22 * s)))),
-            tags="hero",
-        )
+        x = 33 if w >= 700 else 23
+        copy_width = max(180, left_w - x - 38)
+        c.create_rectangle(x, 34, x+5, 49,
+                           fill=COLORS["orange"], outline="", tags="hero")
+        c.create_text(x+16, 42, text="LATEST UPDATE  /  " + release.upper(),
+                      fill="#F5A660", anchor="w",
+                      font=("Bahnschrift SemiBold", max(8, int(round(10*s)))),
+                      tags="hero")
 
-        c.create_text(
-            40, 190,
-            text=(
-                "Native PC. Modular characters. Custom karts.\n"
-                "Community content built around the Forge."
-            ),
-            anchor="nw",
-            fill="#B0B4B9",
-            font=("Bahnschrift", max(8, int(round(10 * s)))),
-            tags="hero",
-        )
+        title_size = max(19, int(round((25 if w >= 720 else 21)*s)))
+        c.create_text(x, 85,
+                      text="WHAT'S NEW", anchor="w", fill="#F4F2ED",
+                      font=("Bahnschrift SemiBold", title_size), tags="hero")
+        c.create_text(x, 119, text="CRASH FORGE LAUNCHER",
+                      anchor="w", fill=COLORS["orange"],
+                      font=("Bahnschrift SemiBold",
+                            max(11, int(round(14*s)))), tags="hero")
 
-        # Small build tag in the corner, matching the compact header treatment.
-        tag_w = max(170, int(205 * s))
-        tag_h = max(52, int(58 * s))
-        tag_x = w - tag_w - 24
-        tag_y = (max(218, h - tag_h - 70) if w < 740
-                 else max(92, int(round(96 * s))))
-        if h < 310:
-            # The dashboard still shows the installation status on short
-            # windows; do not draw a badge over the hero caption/footer.
-            tag_x = -1000
-        c.create_rectangle(
-            tag_x, tag_y,
-            tag_x + tag_w, tag_y + tag_h,
-            fill="#0A0D11",
-            outline="#3A4047",
-            width=1,
-            tags="hero",
-        )
-        c.create_rectangle(
-            tag_x, tag_y,
-            tag_x + 4, tag_y + tag_h,
-            fill=COLORS["orange"],
-            outline="",
-            tags="hero",
-        )
-        c.create_text(
-            tag_x + 14, tag_y + 16,
-            text="GAME INSTALLATION",
-            anchor="w",
-            fill="#81878E",
-            font=("Bahnschrift SemiBold", max(7, int(round(8 * s)))),
-            tags="hero",
-        )
-        c.create_text(
-            tag_x + 14, tag_y + 37,
-            text=("INSTALLED" if services.real_game_status(getattr(self, "game_install_path", services.DEFAULT_GAME_PATH))["installed"] else "NOT INSTALLED"),
-            anchor="w",
-            fill="#F2F2EF",
-            font=("Bahnschrift SemiBold", max(12, int(round(15 * s)))),
-            tags="hero",
-        )
-        c.create_oval(
-            tag_x + tag_w - 26, tag_y + 24,
-            tag_x + tag_w - 16, tag_y + 34,
-            fill=COLORS["success"],
-            outline="",
-            tags="hero",
-        )
+        # Read the SAME changelog as NEWS; no duplicate hardcoded copy.
+        row_y = 159 if h >= 315 else 143
+        bottom_y = h - 53
+        limit = 3 if h >= 355 else (2 if h >= 285 else 1)
+        char_width = max(24, min(50, int(copy_width / max(5.7, 6.1*s))))
+        for note in highlights[:limit]:
+            rows = textwrap.wrap(str(note), width=char_width,
+                                 break_long_words=False, break_on_hyphens=False)
+            if not rows:
+                continue
+            rows = rows[:2]
+            text_height = max(17, 14 * len(rows))
+            if row_y + text_height > bottom_y:
+                break
+            c.create_oval(x, row_y+5, x+5, row_y+10,
+                          fill=COLORS["orange"], outline="", tags="hero")
+            c.create_text(x+14, row_y, text="\n".join(rows),
+                          anchor="nw", fill="#DBDEE1",
+                          font=("Bahnschrift", max(8, int(round(9*s)))),
+                          justify="left", tags="hero")
+            row_y += text_height + 13
 
-        # Small footer rail only; the workshop artwork does the visual heavy lifting.
-        rail_y = h - 38
-        c.create_line(
-            38, rail_y, min(330, w - 38), rail_y,
-            fill="#4A4F56",
-            width=1,
-            tags="hero",
-        )
-        c.create_line(
-            38, rail_y, min(150, w - 38), rail_y,
-            fill=COLORS["orange"],
-            width=2,
-            tags="hero",
-        )
-        c.create_text(
-            38, rail_y + 13,
-            text="CRASH FORGE SYSTEM  /  WINDOWS",
-            anchor="w",
-            fill="#70767D",
-            font=("Bahnschrift SemiBold", max(6, int(round(7 * s)))),
-            tags="hero",
-        )
+        # Installed status remains legible above the picture, without
+        # covering its content or colliding with the release text.
+        if w >= 720 and h >= 300:
+            badge_w = max(168, int(round(202*s)))
+            bx = max(left_w+15, w - badge_w - 17)
+            by = 14
+            c.create_rectangle(bx, by, bx+badge_w, by+53,
+                               fill="#0A0D11", outline="#3A4047",
+                               width=1, tags="hero")
+            c.create_rectangle(bx, by, bx+4, by+53,
+                               fill=COLORS["orange"], outline="", tags="hero")
+            installed = services.real_game_status(
+                getattr(self, "game_install_path",
+                        services.DEFAULT_GAME_PATH))["installed"]
+            c.create_text(bx+13, by+15, anchor="w",
+                          text="GAME INSTALLATION", fill="#81878E",
+                          font=("Bahnschrift SemiBold", max(7,int(round(8*s)))),
+                          tags="hero")
+            c.create_text(bx+13, by+35, anchor="w",
+                          text="INSTALLED" if installed else "NOT INSTALLED",
+                          fill="#F2F2EF",
+                          font=("Bahnschrift SemiBold",
+                                max(12,int(round(14*s)))), tags="hero")
+            c.create_oval(bx+badge_w-24, by+24,
+                          bx+badge_w-15, by+33,
+                          fill=(COLORS["success"] if installed
+                                else COLORS["muted"]),
+                          outline="", tags="hero")
 
+        footer_y = h-36
+        c.create_line(x, footer_y, min(x+270, w-22), footer_y,
+                      fill="#4A4F56", width=1, tags="hero")
+        c.create_line(x, footer_y, min(x+105, w-22), footer_y,
+                      fill=COLORS["orange"], width=2, tags="hero")
+        c.create_text(x, footer_y+13, anchor="w",
+                      text="MORE DETAILS IN NEWS  ↓",
+                      fill="#A7ADB4",
+                      font=("Bahnschrift SemiBold", max(7,int(round(8*s)))),
+                      tags="hero")
         c.tag_lower("hero")
-
 
     def _news(self, parent):
         header = tk.Frame(parent, bg=COLORS["panel"])

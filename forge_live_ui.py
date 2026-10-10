@@ -185,12 +185,12 @@ class ForgeLiveMixin:
             child.destroy()
         from tkinter import Frame, Label
         version, notes = services.real_launcher_changelog(
-            self._forge_base_dir(), limit=4)
+            self._forge_base_dir(), limit=8)
         headline = {
             "category": "LATEST LAUNCHER UPDATE",
             "title": "Crash Forge Launcher " + (version or ""),
             "date": "",
-            "description": "\\n".join("- " + str(line) for line in notes[:3])
+            "description": "\\n".join("- " + str(line) for line in notes[:8])
                 if notes else "Latest launcher changes and tools.",
         }
         items = [headline] + (self.github_release_news +
@@ -205,7 +205,14 @@ class ForgeLiveMixin:
                     row, height=174, bg="#111419", bd=0, highlightthickness=0)
                 banner.pack(fill="x")
                 image_path = os.path.join(self._forge_base_dir(),
-                                          "assets", "Fondo.png")
+                                          "assets", "news", "latest_update.webp")
+                if not os.path.isfile(image_path):
+                    image_path = os.path.join(
+                        self._forge_base_dir(), "_internal", "assets",
+                        "news", "latest_update.webp")
+                if not os.path.isfile(image_path):
+                    image_path = os.path.join(
+                        self._forge_base_dir(), "assets", "Fondo.png")
 
                 def paint_banner(event=None, canvas=banner, image_file=image_path):
                     width = max(240, canvas.winfo_width())
