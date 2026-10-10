@@ -155,7 +155,7 @@ class NewsHistoryTests(unittest.TestCase):
         self.assertEqual(old[0]["version"], "0.3.39")
         self.assertTrue(history.release_url("v0.3.38").endswith("/tag/v0.3.38"))
         self.assertTrue(history.release_url("v0.3.37").endswith("/tag/v0.3.37"))
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.39")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.40")
 
 
 if __name__ == "__main__":

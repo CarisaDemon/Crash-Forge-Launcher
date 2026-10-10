@@ -48,7 +48,7 @@ class SameVersionSelfUpdateTests(unittest.TestCase):
             (app/"launcher_version.txt").write_text("0.3.38",encoding="utf-8")
             release=sample_release(make_zip("0.3.38",b"first"),"0.3.38")
             self.assertTrue(lu.update_required(release,"0.3.38",app_dir=app,root=root))
-            self.assertFalse(lu.update_required(release,"0.3.39",app_dir=app,root=root))
+            self.assertFalse(lu.update_required(release,"0.3.40",app_dir=app,root=root))
             self.assertFalse(lu.update_required(
                 dict(release,verified=False),"0.3.38",app_dir=app,root=root))
             self.assertFalse(lu.update_required(release,"0.3.38",app_dir=None,root=root))

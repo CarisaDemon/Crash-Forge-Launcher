@@ -65,6 +65,21 @@ def main():
     assert result.returncode==0,(
         "Packaged launcher failed background smoke: "+result.stderr[-1500:])
     print("PASS packaged launcher EXE self-test without showing window")
+    # Exercise a fully extracted portable ZIP under a fresh OneDrive-like path.
+    checks=("_internal/_tcl_data/init.tcl","_internal/_tk_data/tk.tcl",
+            "_internal/tcl86t.dll","_internal/tk86t.dll","_internal/_tkinter.pyd")
+    archive_path=BUILD/"release"/updates.ZIP_NAME
+    assert archive_path.is_file(), "Release ZIP is missing"
+    with tempfile.TemporaryDirectory(prefix="Crash Forge community ") as td:
+        folder=Path(td)/"OneDrive"/"Desktop"/"Games"/"Crash_Forge_Racing"
+        folder.mkdir(parents=True)
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(folder)
+        for entry in checks:
+            assert (folder/entry).is_file(), "Missing portable Tcl/Tk: "+entry
+        result=no_window_run([str(folder/"CrashForgeLauncher.exe"),"--self-test"])
+        assert result.returncode==0, "Launcher failed after extraction: "+result.stderr[-900:]
+    print("PASS fully extracted release ZIP under OneDrive-like path")
     featured = PORTABLE/"_internal"/"assets"/"news"/"latest_update.webp"
     assert featured.is_file(), "Featured artwork missing from internal resources"
     assert not (PORTABLE/"assets"/"news"/"latest_update.webp").exists(), (

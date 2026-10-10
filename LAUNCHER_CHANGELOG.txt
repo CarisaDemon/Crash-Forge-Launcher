@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.40
+- Added Tcl/Tk release integrity validation and extracted ZIP smoke test.
+- Keep the complete _internal folder next to the launcher EXE.
+- Fixed missing Tcl init.tcl packaging checks for extracted Windows ZIPs.
+
 v0.3.39
 - Forge Hub is now an installed-mod manager with Installed Only and Hide Local filters.
 - Verified ZIP mods install in separate web-ID folders with native INI enable switches.
