@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.37
+- Forge Hub website is available for community mod publishing and browsing.
+- Open the official Forge Hub website directly beside EDITOR in the launcher header.
+- Creator Studio supports mod updates, review, and modpacks with separate mod metadata.
+- Verified moderators can review, publish, unpublish and remove ZIPs with a recorded reason.
+- Model Importer stays bundled; game-side custom track registration is still in progress.
+
 v0.3.36
 - Restore automatically bundled Model Importer v1.7.
 - Forge Hub Rights Evidence optional; redistribution rights confirmation still required.

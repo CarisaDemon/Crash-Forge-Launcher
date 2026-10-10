@@ -1,5 +1,6 @@
 import os
 import sys
+import webbrowser
 import json
 import textwrap
 import threading
@@ -32,6 +33,7 @@ OGG_TOOL_PATH = os.environ.get("CFR_OGG_TOOL_PATH", "")
 CSEQ_TOOL_PATH = os.environ.get("CFR_CSEQ_TOOL_PATH", "")
 BASE_WIDTH = 1280
 BASE_HEIGHT = 820
+FORGE_HUB_WEB_URL = "https://carisademon.github.io/Crash-Forge-Racing/forge-hub/"
 
 try:
     with open(VERSION_FILE, "r", encoding="utf-8") as _vf:
@@ -1311,15 +1313,58 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             lambda e: self._show_editor_selector(),
         )
 
-        # Version text floats independently; no container around it.
-        controls_right = width - 18
+        # External community web shortcut, visibly next to EDITOR.
+        # The existing MODS button continues to open the launcher-native hub.
+        hub_x1 = editor_x2 + 12
+        hub_x2 = hub_x1 + 114
+        top.create_rectangle(
+            hub_x1, editor_y1, hub_x2, editor_y2,
+            fill="#0B0E12", outline="#5C6269", width=1,
+            tags=("header", "forge_hub_button", "forge_hub_frame"),
+        )
+        top.create_rectangle(
+            hub_x1, editor_y1, hub_x1 + 3, editor_y2,
+            fill=COLORS["orange"], outline="",
+            tags=("header", "forge_hub_button"),
+        )
         top.create_text(
-            controls_right - 170,
-            41,
+            (hub_x1 + hub_x2) / 2 + 2,
+            (editor_y1 + editor_y2) / 2,
+            text="FORGE HUB", fill="#E8E8E4",
+            font=("Bahnschrift SemiBold", 9),
+            tags=("header", "forge_hub_button"),
+        )
+        top.tag_bind(
+            "forge_hub_button", "<Enter>",
+            lambda e: top.itemconfigure(
+                "forge_hub_frame", outline=COLORS["orange"]
+            )
+        )
+        top.tag_bind(
+            "forge_hub_button", "<Leave>",
+            lambda e: top.itemconfigure(
+                "forge_hub_frame", outline="#5C6269"
+            )
+        )
+        top.tag_bind(
+            "forge_hub_button", "<Button-1>",
+            lambda e: self._open_forge_hub_website(),
+        )
+
+        # Version text floats independently; move below the buttons in
+        # compact windows to avoid covering the web shortcut.
+
+        controls_right = width - 18
+        if width >= 920:
+            version_x, version_y, version_font = controls_right - 170, 41, 9
+        else:
+            version_x, version_y, version_font = controls_right - 8, 70, 8
+        top.create_text(
+            version_x, version_y,
             text=f"LAUNCHER  v{APP_VERSION}",
             anchor="e",
             fill="#B7BBC0",
-            font=("Bahnschrift", 9),
+            font=("Bahnschrift", version_font),
             tags=("header", "drag_area"),
         )
 
@@ -1390,6 +1435,19 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             "win_close", "<Button-1>",
             lambda e: self.destroy()
         )
+
+    def _open_forge_hub_website(self):
+        """Open the official Forge Hub website without leaving the launcher."""
+        try:
+            if sys.platform.startswith("win") and hasattr(os, "startfile"):
+                os.startfile(FORGE_HUB_WEB_URL)
+            elif not webbrowser.open(FORGE_HUB_WEB_URL, new=2):
+                raise OSError("No browser is configured")
+            self.status_label.configure(text="Opening Forge Hub in your browser...")
+        except (OSError, ValueError, RuntimeError):
+            self.status_label.configure(
+                text="Could not open Forge Hub. Check your default browser."
+            )
 
     def _close_editor_selector(self):
         window = getattr(self, "_editor_window", None)
