@@ -30,17 +30,13 @@ Write-Output "Building independent updater helper..."
 & $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "ForgeLauncherUpdater" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath (Join-Path $BuildRoot "updater") --workpath (Join-Path $workRoot "updater") --specpath $specRoot (Join-Path $Source "launcher_update_helper.py")
 if($LASTEXITCODE -ne 0) {throw "Update helper PyInstaller build failed"}
 Copy-Item -LiteralPath (Join-Path $BuildRoot "updater\ForgeLauncherUpdater.exe") -Destination (Join-Path $exeDir "ForgeLauncherUpdater.exe") -Force
-Write-Output "Building OPTIONAL Crash Forge Model Importer v1.7..."
+Write-Output "Building bundled Crash Forge Model Importer v1.7..."
 & $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "CrashForgeModelImporter" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath (Join-Path $BuildRoot "model_importer") --workpath (Join-Path $workRoot "model_importer") --specpath $specRoot (Join-Path $Source "companion_tools\model_importer\crash_forge_character_tool.py")
 if($LASTEXITCODE -ne 0){throw "Model Importer build failed"}
-# Optional editor tool is published beside the ZIP, NOT inside the launcher.
-$optionalTool = Join-Path $BuildRoot "model_importer\CrashForgeModelImporter.exe"
-$optionalRelease = Join-Path $releaseRoot "CrashForgeModelImporter.exe"
-Copy-Item -LiteralPath $optionalTool -Destination $optionalRelease -Force
-$optionalSha = (Get-FileHash -LiteralPath $optionalRelease -Algorithm SHA256).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText((Join-Path $releaseRoot "CrashForgeModelImporter.exe.sha256"),
-    ($optionalSha+"  CrashForgeModelImporter.exe"+[Environment]::NewLine),
-    [Text.Encoding]::ASCII)
+# Importer is included in verified launcher ZIP and updated automatically.
+$toolsTarget = Join-Path $exeDir "_internal\editor_tools"
+[IO.Directory]::CreateDirectory($toolsTarget) | Out-Null
+Copy-Item -LiteralPath (Join-Path $BuildRoot "model_importer\CrashForgeModelImporter.exe") -Destination (Join-Path $toolsTarget "CrashForgeModelImporter.exe") -Force
 $assets = @(
   @{Source="assets\Fondo.png"; Target="assets\Fondo.png"},
   @{Source="assets\icons\cfr_icon.png"; Target="assets\icons\cfr_icon.png"},

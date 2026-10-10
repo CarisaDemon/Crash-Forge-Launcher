@@ -23,9 +23,13 @@ own track.ini. No OBJ tracks or retail Crash Cove replacements are made.
 Runtime registration and menu selection are still needed before these
 packages can be played; installing alone does not activate a track.
 
-## Optional Model Importer
+## Bundled Model Importer
 
-Starting with v0.3.35, the **EDITOR > MODEL IMPORTER** tool is optional: it is **not** downloaded automatically or packed inside the launcher ZIP. Click **INSTALL TOOL** to choose a separate, official GitHub Model Importer download. The standalone Windows EXE is checked against its SHA-256 before it is installed in the user's local Crash Forge tools directory, without changing the game or its mods. Installed tools show **OPEN TOOL** and can be updated voluntarily using **UPDATE TOOL**. Existing pre-v0.3.35 bundled Model Importer files remain usable; the updater does not silently erase those files. The tool includes native modular racers, kart colors and experimental LEV/VRM track package preparation.
+Starting with v0.3.36, Editor > Model Importer is again bundled in the
+Windows launcher under _internal/editor_tools/CrashForgeModelImporter.exe.
+The verified launcher auto-updater updates it with every launcher release.
+Character mods, kart colors, and native LEV/VRM track packager are supported.
+The v0.3.35 optional-install experiment has been retired.
 
 ## Separate automatic updates
 
@@ -56,7 +60,6 @@ Outputs (outside the source directory by default):
 - Crash Forge Launcher Dist/dist/CrashForgeLauncher/ — portable Windows app folder.
 - Crash Forge Launcher Dist/release/Crash-Forge-Launcher-Windows.zip — downloadable ZIP.
 - Crash Forge Launcher Dist/release/Crash-Forge-Launcher-Windows.zip.sha256 — release checksum.
-- Crash Forge Launcher Dist/release/CrashForgeModelImporter.exe and .exe.sha256 — optional editor download and its checksum (not included in launcher ZIP).
 
 For CI use environment variable CFR_BUILD_DIR=build. Do not add private mod ZIPs, developer snapshots, personal settings or original game files to the launcher repository or its release bundles.
 

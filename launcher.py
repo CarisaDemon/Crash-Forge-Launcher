@@ -12,7 +12,6 @@ import forge_services as services
 import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
-import forge_optional_tools as optional_tools
 
 try:
     from PIL import Image, ImageTk, ImageOps
@@ -1424,123 +1423,6 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 text="Could not open the selected editor tool."
             )
 
-    def _model_importer_local_path(self):
-        """Choose only installed official tools; never perform a network request."""
-        official = optional_tools.installed_path()
-        if official is not None:
-            return str(official)
-        # Older official launcher ZIPs bundled an EXE. Preserve that user's
-        # working installation instead of silently removing their tool.
-        legacy = os.path.join(BASE_DIR, "_internal", "editor_tools",
-                              optional_tools.TOOL_EXE)
-        if os.path.isfile(legacy):
-            return legacy
-        if not getattr(sys, "frozen", False):
-            source = os.path.abspath(os.path.join(
-                BASE_DIR, "..", "Crash Forge Character Tool",
-                "Open Crash Forge Character Tool.bat"))
-            if os.path.isfile(source):
-                return source
-        return None
-
-    def _model_importer_button_text(self):
-        local = self._model_importer_local_path()
-        if not local:
-            return "INSTALL TOOL"
-        version = optional_tools.installed_version()
-        if (version and launcher_updates.parse_version(version)
-                < launcher_updates.parse_version(APP_VERSION)):
-            return "UPDATE TOOL"
-        return "OPEN TOOL"
-
-    def _install_or_open_model_importer(self):
-        if getattr(self, "_model_importer_busy", False):
-            return
-        local = self._model_importer_local_path()
-        version = optional_tools.installed_version()
-        if local and (not version or
-                      launcher_updates.parse_version(version)
-                      >= launcher_updates.parse_version(APP_VERSION)):
-            self._launch_editor_tool(local)
-            return
-        if local:
-            confirmed = messagebox.askyesno(
-                "Crash Forge Model Importer",
-                "An updated Model Importer is available.\n\n"
-                "Download it from the official Crash Forge Launcher "
-                "GitHub release?\n\n"
-                "Choose No to keep using your installed version.",
-                parent=getattr(self, "_editor_window", self))
-            if not confirmed:
-                self._launch_editor_tool(local)
-                return
-        else:
-            confirmed = messagebox.askyesno(
-                "Optional Model Importer",
-                "Install Model Importer?\n\n"
-                "This tool is optional and is NOT included in the "
-                "launcher download.\n\n"
-                "It will download separately from the official "
-                "Crash Forge GitHub Release and be verified with SHA-256.",
-                parent=getattr(self, "_editor_window", self))
-            if not confirmed:
-                return
-
-        self._model_importer_busy = True
-        self._model_importer_status("Connecting to official GitHub release...")
-        button = getattr(self, "_editor_model_button", None)
-        try:
-            if button and button.winfo_exists():
-                button.configure(text="DOWNLOADING", fg="#B0B7BD",
-                                 cursor="arrow")
-        except tk.TclError:
-            pass
-
-        def worker():
-            try:
-                release = optional_tools.find_official_tool()
-                installed = optional_tools.install_tool(release)
-                self.after(0, lambda: self._model_importer_complete(str(installed)))
-            except (launcher_updates.LauncherUpdateError, OSError,
-                    ValueError) as exc:
-                error = str(exc)
-                self.after(0, lambda msg=error: self._model_importer_failed(msg))
-
-        threading.Thread(target=worker, name="optional-model-importer",
-                         daemon=True).start()
-
-    def _model_importer_status(self, text, error=False):
-        label = getattr(self, "_editor_status_label", None)
-        try:
-            if label and label.winfo_exists():
-                label.configure(text=text, fg="#FF7A61" if error else "#ADB2B9")
-        except tk.TclError:
-            pass
-
-    def _model_importer_complete(self, path):
-        self._model_importer_busy = False
-        self._model_importer_status("Verified Model Importer installed successfully.")
-        button = getattr(self, "_editor_model_button", None)
-        try:
-            if button and button.winfo_exists():
-                button.configure(text="OPEN TOOL", fg="#FFF1E4",
-                                 cursor="hand2")
-        except tk.TclError:
-            pass
-        self._launch_editor_tool(path)
-
-    def _model_importer_failed(self, reason):
-        self._model_importer_busy = False
-        self._model_importer_status("Model Importer download failed: " +
-                                    reason[:130], error=True)
-        button = getattr(self, "_editor_model_button", None)
-        try:
-            if button and button.winfo_exists():
-                button.configure(text=self._model_importer_button_text(),
-                                 fg="#FFF1E4", cursor="hand2")
-        except tk.TclError:
-            pass
-
     def _show_editor_selector(self):
         current = getattr(self, "_editor_window", None)
         if current is not None:
@@ -1709,7 +1591,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         cards_host.grid_columnconfigure(1, weight=1, uniform="tool")
         cards_host.grid_columnconfigure(2, weight=1, uniform="tool")
 
-        def make_tool_card(col, title, subtitle, detail, action=None, disabled=False, button_label=None):
+        def make_tool_card(col, title, subtitle, detail, action=None, disabled=False):
             edge = "#343A42" if disabled else "#4A5058"
             card = tk.Frame(
                 cards_host,
@@ -1814,7 +1696,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 justify="center",
             ).pack(padx=12)
 
-            button_text = "COMING SOON" if disabled else (button_label or "OPEN TOOL")
+            button_text = "COMING SOON" if disabled else "OPEN TOOL"
             button = tk.Label(
                 card,
                 text=button_text,
@@ -1828,8 +1710,6 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 cursor="arrow" if disabled else "hand2",
             )
             button.pack(side="bottom", pady=18)
-            if col == 2:
-                self._editor_model_button = button
 
             if not disabled and action is not None:
                 widgets = [card, icon, button]
@@ -1871,13 +1751,19 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     CSEQ_TOOL_PATH or os.path.join(
                         self.game_install_path, "tools", "cfr_midi_tool", "run_tool.bat")),
         )
+        model_tool = os.path.join(BASE_DIR, "_internal", "editor_tools",
+                                  "CrashForgeModelImporter.exe")
+        if not os.path.isfile(model_tool) and not getattr(sys, "frozen", False):
+            model_tool = os.path.abspath(os.path.join(
+                BASE_DIR, "..", "Crash Forge Character Tool",
+                "Open Crash Forge Character Tool.bat"))
         make_tool_card(
             2,
             "MODEL IMPORTER",
             "CHARACTERS / KARTS / TRACKS",
-            "Optional tool for characters, kart colors and native .LEV/.VRM tracks.",
-            action=self._install_or_open_model_importer,
-            button_label=self._model_importer_button_text(),
+            "Import characters, customize karts and package native .LEV/.VRM tracks.",
+            action=(lambda: self._launch_editor_tool(model_tool)),
+            disabled=not os.path.isfile(model_tool),
         )
 
         self._editor_status_label = tk.Label(

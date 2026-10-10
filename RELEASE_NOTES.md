@@ -1,9 +1,6 @@
-# Crash Forge: Racing Launcher v0.3.35
+# Crash Forge: Racing Launcher v0.3.36
 
-- **Home showcase:** the latest update is illustrated with the real Model Importer screenshot.
-- **Quick release highlights:** current launcher version and a concise summary are visible on Home.
-- **Full news below:** open NEWS for more detailed changes and matching artwork.
-- **Optional Model Importer:** it is no longer included in the launcher ZIP. Click **INSTALL TOOL** to download it only when wanted.
-- **SHA-256 verification:** Model Importer downloads separately from the official GitHub release and is verified before installation.
-- **OPEN TOOL / UPDATE TOOL:** installed tools remain available, with optional updates when a new launcher release is available.
-- Same Windows updater, mods, native LEV/VRM track importer and Crash Cove behavior as before.
+- Model Importer v1.7 is bundled again with the Windows launcher and updated automatically through the verified launcher updater.
+- Retains the actual Model Importer illustration on Home, short version highlights, and detailed NEWS.
+- Forge Hub moderation now allows optional Rights Evidence / review notes (maximum 1000 characters). Moderator access and explicit rights confirmation remain mandatory.
+- Original Crash Cove, game binaries, user mods, and update rollback behavior unchanged.
