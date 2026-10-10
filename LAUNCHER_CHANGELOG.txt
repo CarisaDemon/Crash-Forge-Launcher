@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.38
+- Redesigned Model Importer v1.8: Home, Character, Kart, Wheels and Tracks workspaces.
+- Improved modular OBJ imports, offsets, kart colors and four-wheel mounts.
+- Garage artwork and Windows icon included in the Model Importer executable.
+- Native LEV/VRM track package preparation without replacing original tracks.
+- Model Importer stays bundled and updates automatically with the Windows launcher.
+
 v0.3.37
 - Forge Hub website is available for community mod publishing and browsing.
 - Open the official Forge Hub website directly beside EDITOR in the launcher header.

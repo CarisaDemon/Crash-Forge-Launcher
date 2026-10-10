@@ -16,8 +16,8 @@ If no Releases are available, the launcher distribution has not been published y
 
 ## Native tracks (experimental packager)
 
-Model Importer v1.7 accepts only paired LEV + VRM files in its
-CUSTOM TRACKS card. It validates basic headers and hashes, then installs
+Model Importer v1.8 accepts paired LEV + VRM files in its
+TRACKS section. It validates basic headers and hashes, then installs
 a non-destructive package to assets/mods/tracks/<track-id>/ with its
 own track.ini. No OBJ tracks or retail Crash Cove replacements are made.
 Runtime registration and menu selection are still needed before these
@@ -28,8 +28,11 @@ packages can be played; installing alone does not activate a track.
 Starting with v0.3.36, Editor > Model Importer is again bundled in the
 Windows launcher under _internal/editor_tools/CrashForgeModelImporter.exe.
 The verified launcher auto-updater updates it with every launcher release.
-Character mods, kart colors, and native LEV/VRM track packager are supported.
-The v0.3.35 optional-install experiment has been retired.
+Version 1.8 features a redesigned launcher-style home screen, separate
+CHARACTER/KART/WHEELS/TRACKS workspaces, dedicated modular OBJ imports,
+optional kart palettes, and native LEV/VRM track packages. Embedded garage
+art and the icon work in the portable editor EXE. Existing originals and
+mod backups are preserved. The v0.3.35 optional-install experiment is retired.
 
 ## Separate automatic updates
 

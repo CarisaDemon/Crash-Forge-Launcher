@@ -30,8 +30,10 @@ Write-Output "Building independent updater helper..."
 & $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "ForgeLauncherUpdater" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath (Join-Path $BuildRoot "updater") --workpath (Join-Path $workRoot "updater") --specpath $specRoot (Join-Path $Source "launcher_update_helper.py")
 if($LASTEXITCODE -ne 0) {throw "Update helper PyInstaller build failed"}
 Copy-Item -LiteralPath (Join-Path $BuildRoot "updater\ForgeLauncherUpdater.exe") -Destination (Join-Path $exeDir "ForgeLauncherUpdater.exe") -Force
-Write-Output "Building bundled Crash Forge Model Importer v1.7..."
-& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "CrashForgeModelImporter" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --distpath (Join-Path $BuildRoot "model_importer") --workpath (Join-Path $workRoot "model_importer") --specpath $specRoot (Join-Path $Source "companion_tools\model_importer\crash_forge_character_tool.py")
+Write-Output "Building bundled Crash Forge Model Importer v1.8..."
+$modelImporterBackground = (Join-Path $Source "assets\Fondo.png") + ";assets"
+$modelImporterIcon = (Join-Path $Source "assets\icons\cfr_icon.ico") + ";assets/icons"
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "CrashForgeModelImporter" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $modelImporterBackground --add-data $modelImporterIcon --distpath (Join-Path $BuildRoot "model_importer") --workpath (Join-Path $workRoot "model_importer") --specpath $specRoot (Join-Path $Source "companion_tools\model_importer\crash_forge_character_tool.py")
 if($LASTEXITCODE -ne 0){throw "Model Importer build failed"}
 # Importer is included in verified launcher ZIP and updated automatically.
 $toolsTarget = Join-Path $exeDir "_internal\editor_tools"

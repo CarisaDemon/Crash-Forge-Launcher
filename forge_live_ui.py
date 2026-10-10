@@ -188,7 +188,9 @@ class ForgeLiveMixin:
             self._forge_base_dir(), limit=8)
         headline = {
             "category": "LATEST LAUNCHER UPDATE",
-            "title": "Crash Forge Launcher " + (version or ""),
+            "title": ("Model Importer v1.8 — Redesigned" if version == "v0.3.38"
+                      else "Forge Hub Website Is Live" if version == "v0.3.37"
+                      else "Crash Forge Launcher " + (version or "")),
             "date": "",
             "description": "\\n".join("- " + str(line) for line in notes[:8])
                 if notes else "Latest launcher changes and tools.",

@@ -1818,8 +1818,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         make_tool_card(
             2,
             "MODEL IMPORTER",
-            "CHARACTERS / KARTS / TRACKS",
-            "Import characters, customize karts and package native .LEV/.VRM tracks.",
+            "CHARACTERS / KARTS / WHEELS / TRACKS",
+            "Import characters, modular karts, wheels and native .LEV/.VRM tracks.",
             action=(lambda: self._launch_editor_tool(model_tool)),
             disabled=not os.path.isfile(model_tool),
         )
@@ -2445,8 +2445,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                       tags="hero")
 
         title_size = max(19, int(round((25 if w >= 720 else 21)*s)))
+        hero_title = "MODEL IMPORTER 1.8" if APP_VERSION == "0.3.38" else "WHAT'S NEW"
         c.create_text(x, 85,
-                      text="WHAT'S NEW", anchor="w", fill="#F4F2ED",
+                      text=hero_title, anchor="w", fill="#F4F2ED",
                       font=("Bahnschrift SemiBold", title_size), tags="hero")
         c.create_text(x, 119, text="CRASH FORGE LAUNCHER",
                       anchor="w", fill=COLORS["orange"],

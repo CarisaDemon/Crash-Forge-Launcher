@@ -8,10 +8,11 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from crash_forge_kart_colors import install_colors, KartColorError
+from crash_forge_model_imports import import_mod, ImportErrorMod
 from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
 
 APP_TITLE = "Crash Forge Model Importer"
-APP_VERSION = "1.7"
+APP_VERSION = "1.8"
 TOOL_DIR = Path(__file__).resolve().parent
 
 def find_source_root():
@@ -150,6 +151,16 @@ class App(tk.Tk):
         self.geometry("1060x800")
         self.minsize(640, 520)
         self.configure(bg=BG)
+        self.active_section = "home"
+        self.mod_obj_var = tk.StringVar()
+        self.mod_name_var = tk.StringVar(value="My Custom Model")
+        self.mod_id_var = tk.StringVar(value="my_custom_mod")
+        self.mod_scale_var = tk.StringVar(value="1.0")
+        self.mod_offsets = {axis: tk.StringVar(value="0.0") for axis in "xyz"}
+        self.mod_mounts = {key: tk.StringVar(value="0.0") for key in
+                           ["seat_x", "seat_y", "seat_z"] +
+                           ["wheel_" + wheel + "_" + axis for wheel in ("fl","fr","rl","rr") for axis in "xyz"]}
+        self.mod_use_colors = tk.BooleanVar(value=False)
         self.obj_var = tk.StringVar()
         self.name_var = tk.StringVar(value="My Character")
         self.slug_var = tk.StringVar(value="my_character")
@@ -191,11 +202,26 @@ class App(tk.Tk):
         self.icon_preview = None
         self._columns_stacked = None
         self._compact_controls = None
+        self._set_windows_identity()
         self._setup_style()
         self._build_ui()
         self.game_var.trace_add("write", self._on_game_path_change)
         self._sync_output_path()
         self._update_icon_controls()
+        self._show_section("home")
+
+    def _set_windows_identity(self):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CrashForge.Racing.ModelImporter")
+        except (AttributeError, OSError):
+            pass
+        try:
+            icon = self._forge_art_file("icons/cfr_icon.ico")
+            if icon is not None:
+                self.iconbitmap(str(icon))
+        except (OSError, tk.TclError):
+            pass
 
     def _setup_style(self):
         style = ttk.Style(self)
@@ -267,6 +293,12 @@ class App(tk.Tk):
         self.bind("<Button-4>", self._on_mousewheel, add="+")
         self.bind("<Button-5>", self._on_mousewheel, add="+")
 
+        self.art_banner = tk.Frame(root, bg=BG, height=148)
+        self.art_banner.pack(fill="x", pady=(0,12))
+        self.art_banner.pack_propagate(False)
+        self.art_banner_image = tk.Label(self.art_banner, bg=BG, bd=0)
+        self.art_banner_image.pack(fill="both", expand=True)
+        self.art_banner.bind("<Configure>", self._refresh_art_banner)
         header = ttk.Frame(root)
         header.pack(fill="x", pady=(0, 14))
         title_box = ttk.Frame(header)
@@ -285,8 +317,43 @@ class App(tk.Tk):
         self._title_box = title_box
         self._status_label = status
 
+        self._content_root = root
+        self.home_frame = ttk.Frame(root)
+        self.home_frame.pack(fill="x", pady=(0, 16))
+        ttk.Label(self.home_frame, text="WHAT WOULD YOU LIKE TO IMPORT?",
+                  style="Title.TLabel").pack(anchor="w", pady=(4, 16))
+        self.home_cards = tk.Frame(self.home_frame, bg=BG)
+        self.home_cards.pack(fill="x")
+        for i, (section, label, detail) in enumerate((
+                ("character", "CHARACTER", "Custom racers and character settings"),
+                ("kart", "KART", "Modular karts and optional color palettes"),
+                ("wheels", "WHEELS", "Independent sets of four rotating wheels"),
+                ("tracks", "TRACKS", "Native CTR LEV + VRM packages"))):
+            tile = tk.Frame(self.home_cards, bg=PANEL, highlightbackground=BORDER,
+                            highlightthickness=1, padx=20, pady=22)
+            tile.grid(row=i//2, column=i%2, sticky="nsew", padx=6, pady=6)
+            tk.Button(tile, text=label, bg=ACCENT, fg="#151515",
+                      activebackground=ACCENT_HOVER, relief="flat", cursor="hand2",
+                      font=("Segoe UI Semibold", 14),
+                      command=lambda section=section: self._show_section(section)).pack(fill="x")
+            tk.Label(tile, text=detail, bg=PANEL, fg=MUTED,
+                     font=("Segoe UI", 10), wraplength=330).pack(pady=(10,0))
+        self.home_cards.grid_columnconfigure(0, weight=1)
+        self.home_cards.grid_columnconfigure(1, weight=1)
+        self.section_navigation = tk.Frame(root, bg=BG)
+        self.section_navigation.pack(fill="x", pady=(0, 12))
+        for section,label in (("home","HOME"),("character","CHARACTER"),
+                              ("kart","KART"),("wheels","WHEELS"),("tracks","TRACKS")):
+            tk.Button(self.section_navigation, text=label, bg=PANEL_2, fg=TEXT,
+                      activebackground=ACCENT, relief="flat", cursor="hand2",
+                      font=("Segoe UI Semibold", 9), padx=13, pady=9,
+                      command=lambda section=section: self._show_section(section)).pack(side="left",padx=(0,5))
+        self.section_heading = tk.Label(root, text="", bg=BG, fg=ACCENT,
+                                        font=("Segoe UI Semibold", 18), anchor="w")
+        self.section_heading.pack(fill="x", pady=(0,12))
         source_border, source = self._card(root)
         source_border.pack(fill="x", pady=(0, 12))
+        self.char_source_card = source_border
         self._section_title(source, "MODEL SOURCE", "Choose the OBJ model used by the custom racer.")
         source_line = ttk.Frame(source, style="Panel.TFrame")
         source_line.pack(fill="x")
@@ -295,6 +362,7 @@ class App(tk.Tk):
 
         track_border, tracks = self._card(root)
         track_border.pack(fill="x", pady=(0, 12))
+        self.track_card = track_border
         self._section_title(
             tracks, "CUSTOM TRACKS  /  .LEV + .VRM",
             "Native CTR geometry, collisions and textures only. OBJ/MTL tracks are unsupported.")
@@ -341,6 +409,7 @@ class App(tk.Tk):
 
         palette_border, palette = self._card(root)
         palette_border.pack(fill="x", pady=(0, 12))
+        self.palette_card = palette_border
         self._section_title(
             palette, "KART COLOR VARIANTS",
             "Single OBJ and MTL. Auto-detect Blue, Red, Lime, Pink, Blank and more; save to kart.ini.")
@@ -367,6 +436,7 @@ class App(tk.Tk):
 
         columns = ttk.Frame(root)
         columns.pack(fill="both", expand=True)
+        self.char_columns = columns
         columns.columnconfigure(0, weight=1, uniform="main")
         columns.columnconfigure(1, weight=1, uniform="main")
         columns.rowconfigure(0, weight=1)
@@ -477,6 +547,39 @@ class App(tk.Tk):
         self.report.insert("end", "Choose an OBJ model to begin.\n")
         self.report.configure(state="disabled")
 
+        self.mod_card, model = self._card(root)
+        self.mod_card.pack(fill="x", pady=(0, 12))
+        self._section_title(model, "MODULAR MODEL IMPORT", "Wavefront OBJ + local MTL/textures")
+        fields = ttk.Frame(model, style="Panel.TFrame")
+        fields.pack(fill="x")
+        line = ttk.Frame(model, style="Panel.TFrame")
+        line.pack(fill="x", pady=5)
+        ttk.Entry(line, textvariable=self.mod_obj_var).pack(side="left", fill="x", expand=True, padx=(0,8))
+        ttk.Button(line, text="Browse OBJ...", command=self._choose_mod_obj).pack(side="right")
+        self._field(fields, "Display name", self.mod_name_var, 0)
+        self._field(fields, "Mod ID", self.mod_id_var, 1)
+        self._field(fields, "Scale", self.mod_scale_var, 2)
+        for i, axis in enumerate("xyz", 3):
+            self._field(fields, "Offset " + axis.upper(), self.mod_offsets[axis], i)
+        self.mount_frame = ttk.Frame(model, style="Panel.TFrame")
+        self.mount_frame.pack(fill="x", pady=(10, 0))
+        ttk.Label(self.mount_frame, text="KART MOUNTS (SEAT / FOUR WHEELS)",
+                  style="Section.TLabel").pack(anchor="w")
+        mount_fields = ttk.Frame(self.mount_frame, style="Panel.TFrame")
+        mount_fields.pack(fill="x")
+        for i, (key,var) in enumerate(self.mod_mounts.items()):
+            self._field(mount_fields, key.replace("_"," ").title(), var, i)
+        self.mod_colors_frame = ttk.Frame(model, style="Panel.TFrame")
+        self.mod_colors_frame.pack(fill="x", pady=(12,0))
+        ttk.Checkbutton(self.mod_colors_frame, text="Import additional kart colors (optional)",
+                        variable=self.mod_use_colors).pack(anchor="w")
+        ttk.Entry(self.mod_colors_frame, textvariable=self.kart_color_dir_var).pack(fill="x", pady=4)
+        ttk.Button(self.mod_colors_frame, text="Choose color folder...",
+                   command=self._choose_kart_colors).pack(anchor="w")
+        ttk.Label(model, text="Use the game installation selected in the Character page.",
+                  style="Muted.TLabel").pack(anchor="w", pady=(10,5))
+        ttk.Button(model, text="Import Model", command=self._import_mod,
+                   style="Accent.TButton").pack(anchor="e", pady=(8,0))
         actions = ttk.Frame(root)
         actions.pack(fill="x", pady=(14, 0))
         self.analyze_button = ttk.Button(actions, text="Analyze / Validate", command=self.analyze)
@@ -487,7 +590,144 @@ class App(tk.Tk):
         self.build_button = ttk.Button(actions, text="Build Mod", command=self.build_mod, style="Accent.TButton")
         self.build_button.pack(side="right")
         self._actions_frame = actions
+        self._load_forge_background()
         self.after_idle(lambda: self._update_responsive_layout(self.winfo_width()))
+
+    def _refresh_art_banner(self, event=None):
+        art = getattr(self, "_forge_bg_source", None)
+        if art is None:
+            return
+        try:
+            from PIL import Image, ImageTk, ImageEnhance
+            width = max(1, self.art_banner.winfo_width())
+            height = max(1, self.art_banner.winfo_height())
+            if width < 15 or height < 15:
+                return
+            scale = max(width / art.width, height / art.height)
+            src = art.resize((max(width, int(art.width*scale)),
+                              max(height, int(art.height*scale))), Image.Resampling.LANCZOS)
+            x=(src.width-width)//2
+            y=(src.height-height)//2
+            src=src.crop((x,y,x+width,y+height))
+            self._forge_banner_photo = ImageTk.PhotoImage(src)
+            self.art_banner_image.configure(image=self._forge_banner_photo)
+        except (ImportError, OSError, tk.TclError):
+            pass
+
+    @staticmethod
+    def _forge_art_file(relative):
+        """Find garage artwork in both portable EXEs and the local dev tree."""
+        paths = []
+        bundled_root = getattr(sys, "_MEIPASS", None)
+        if bundled_root:
+            paths.append(Path(bundled_root) / "assets" / relative)
+            paths.append(Path(bundled_root) / "model_importer_art" / relative)
+        paths.extend((
+            TOOL_DIR.parent / "Crash Forge Launcher" / "assets" / relative,
+            TOOL_DIR.parents[1] / "assets" / relative,
+            TOOL_DIR / "assets" / relative,
+        ))
+        return next((p for p in paths if p.is_file()), None)
+
+    def _load_forge_background(self):
+        art = self._forge_art_file("Fondo.png")
+        try:
+            from PIL import Image, ImageTk, ImageEnhance
+            if art is None:
+                raise OSError("Bundled garage background not available")
+            original = Image.open(art).convert("RGB")
+            self._forge_bg_source = ImageEnhance.Brightness(original).enhance(0.78)
+            self.after_idle(self._refresh_art_banner)
+            self._forge_bg = ImageEnhance.Brightness(original).enhance(0.27)
+            self._forge_bg_render = None
+            self.scroll_canvas.bind("<Configure>", self._paint_background, add="+")
+            self._paint_background()
+        except (ImportError, OSError, tk.TclError):
+            self._forge_bg = None
+
+    def _paint_background(self, _event=None):
+        bg = getattr(self, "_forge_bg", None)
+        if bg is None:
+            return
+        from PIL import ImageTk, Image
+        width = max(1, self.scroll_canvas.winfo_width())
+        height = max(1, self.scroll_canvas.winfo_height())
+        if width < 10 or height < 10:
+            return
+        image = bg.resize((width, height), Image.Resampling.LANCZOS)
+        self._forge_bg_render = ImageTk.PhotoImage(image)
+        self.scroll_canvas.delete("forge_background")
+        self.scroll_canvas.create_image(0, 0, image=self._forge_bg_render,
+                                        anchor="nw", tags="forge_background")
+        self.scroll_canvas.tag_lower("forge_background")
+
+    def _show_section(self, section):
+        if section not in ("home", "character", "kart", "wheels", "tracks"):
+            return
+        self.active_section = section
+        for item in (self.home_frame, self.char_source_card, self.track_card,
+                     self.palette_card, self.char_columns, self.mod_card,
+                     self._actions_frame):
+            item.pack_forget()
+        self.section_heading.configure(text={
+            "home":"", "character":"CHARACTER IMPORTER",
+            "kart":"KART IMPORTER", "wheels":"WHEELS IMPORTER",
+            "tracks":"TRACK IMPORTER"}[section])
+        if section == "home":
+            self.home_frame.pack(fill="x", pady=(0, 18), after=self.section_heading)
+        elif section == "character":
+            self.char_source_card.pack(fill="x", pady=(0,12), after=self.section_heading)
+            self.char_columns.pack(fill="both", expand=True, after=self.char_source_card)
+            self._actions_frame.pack(fill="x", pady=(14,0), after=self.char_columns)
+        elif section == "tracks":
+            self.track_card.pack(fill="x", pady=(0,12), after=self.section_heading)
+        else:
+            self.mod_card.pack(fill="x", pady=(0,12), after=self.section_heading)
+            if section == "kart":
+                self.mount_frame.pack(fill="x", pady=(10,0))
+                self.mod_colors_frame.pack(fill="x", pady=(12,0))
+                self.palette_card.pack(fill="x", pady=(0,12), after=self.mod_card)
+            else:
+                self.mount_frame.pack_forget()
+                self.mod_colors_frame.pack_forget()
+        self.scroll_canvas.yview_moveto(0)
+        self._on_content_configure()
+
+    def _choose_mod_obj(self):
+        path = filedialog.askopenfilename(title="Choose modular OBJ",
+                  filetypes=[("Wavefront model", "*.obj"), ("All files", "*.*")])
+        if path:
+            self.mod_obj_var.set(path)
+            if self.mod_id_var.get() == "my_custom_mod":
+                self.mod_id_var.set(clean_slug(Path(path).stem))
+
+    def _import_mod(self):
+        kind = self.active_section
+        if kind not in ("kart", "wheels"):
+            return
+        try:
+            root = self._game_root_from_value()
+            if root is None:
+                raise ImportErrorMod("Choose a game folder before importing.")
+            obj = self.mod_obj_var.get().strip()
+            slug = self.mod_id_var.get().strip()
+            target = root / "assets" / "mods" / ("karts" if kind == "kart" else "wheels") / slug
+            replacing = target.exists()
+            if replacing and not messagebox.askyesno(APP_TITLE,
+                    "Replace this existing mod? A backup will be saved.\n\n" + str(target)):
+                return
+            result = import_mod(obj, root, kind, self.mod_name_var.get(), slug,
+                        self.mod_scale_var.get(),
+                        {a: v.get() for a,v in self.mod_offsets.items()},
+                        {a: v.get() for a,v in self.mod_mounts.items()} if kind == "kart" else {},
+                        self.kart_color_dir_var.get() if kind == "kart" and self.mod_use_colors.get() else None,
+                        replace=replacing)
+            self.last_dest = Path(result["folder"])
+            self.status_var.set(kind.title() + " imported")
+            messagebox.showinfo(APP_TITLE, "Mod installed successfully:\n" + result["folder"])
+        except (ImportErrorMod, OSError, ValueError) as exc:
+            self.status_var.set("Import failed")
+            messagebox.showerror(APP_TITLE, str(exc))
 
     def _auto_track_slug(self):
         try:

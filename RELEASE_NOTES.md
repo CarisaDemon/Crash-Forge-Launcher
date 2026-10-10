@@ -1,10 +1,10 @@
-# Crash Forge: Racing Launcher v0.3.37 — Forge Hub Website Is Live
+# Crash Forge: Racing Launcher v0.3.38 — Model Importer 1.8 Redesign
 
-- **Forge Hub website now available:** browse community mods, modpacks, creators and mod categories from the website.
-- **One-click website access:** FORGE HUB now appears in the launcher header beside EDITOR and opens the official Forge Hub website.
-- **Creator Studio:** creators can submit or update their own mods and modpacks with metadata, pending moderator approval.
-- **Moderation tools:** verified moderators review releases, withdraw public listings and remove private ZIPs with a recorded reason. Creators are shown deletion notices and can dismiss them.
-- **Game integration disclaimer:** native .LEV/.VRM packages are supported for preparation, but adding custom tracks to the in-game track roster remains in development.
-- **Windows launcher:** keeps the bundled Model Importer, launcher updater, existing installed game files and user mods untouched.
+- **Model Importer v1.8:** completely reorganized into a clearer Home screen with dedicated CHARACTER, KART, WHEELS and TRACKS sections.
+- **Modular karts and wheels:** improved OBJ workflows, editable offsets and four-wheel attachment positions, with optional kart color palettes that reuse the model instead of duplicating it.
+- **Native track packages:** import matching .LEV + .VRM files into separate packages without overwriting retail tracks; game-side custom track selection is still in development.
+- **Crash Forge visual style:** garage artwork and the taskbar icon are included in the bundled editor executable.
+- **Single launcher update:** the revamped editor installs and updates automatically with the Windows launcher. No separate downloads or changes to installed game mods.
+- **Forge Hub remains live:** the previous v0.3.37 announcement and its website shortcut remain available. More information is available in NEWS.
 
-The main screenshot for this Forge Hub announcement can be swapped in when its final image is provided.
+Screenshot update: the final v1.8 screenshot may be replaced when the new illustration is supplied.
