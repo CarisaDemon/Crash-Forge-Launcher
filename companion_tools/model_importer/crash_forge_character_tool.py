@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import struct
 import sys
@@ -7,9 +8,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from crash_forge_kart_colors import install_colors, KartColorError
+from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
 
-APP_TITLE = "Crash Forge Character Tool"
-APP_VERSION = "1.6"
+APP_TITLE = "Crash Forge Model Importer"
+APP_VERSION = "1.7"
 TOOL_DIR = Path(__file__).resolve().parent
 
 def find_source_root():
@@ -19,6 +21,26 @@ def find_source_root():
                 (candidate / "platform").is_dir()):
             return candidate
     return None
+
+def find_installed_game():
+    roots = [TOOL_DIR, TOOL_DIR.parent]
+    if getattr(sys, "frozen", False):
+        binary_dir = Path(sys.executable).resolve().parent
+        roots.extend((binary_dir, binary_dir.parent, binary_dir.parent.parent))
+    for root in roots:
+        settings = root / "launcher_settings.json"
+        if settings.is_file():
+            try:
+                info = json.loads(settings.read_text(encoding="utf-8-sig"))
+                path = Path(info.get("game_install_path", ""))
+                if (path / "ctr-native.exe").is_file():
+                    return str(path)
+            except (OSError, ValueError, TypeError):
+                pass
+    candidate = TOOL_DIR.parent / "Crash Team Racing Compiled Custom Music"
+    if (candidate / "ctr-native.exe").is_file():
+        return str(candidate)
+    return ""
 
 SOURCE_ROOT = find_source_root()
 DEFAULT_GAME_ROOT = str(SOURCE_ROOT) if SOURCE_ROOT else ""
@@ -141,6 +163,18 @@ class App(tk.Tk):
         self.kart_mod_dir_var = tk.StringVar(value=str(candidate) if (candidate / "kart.ini").is_file() else "")
         self.kart_color_dir_var = tk.StringVar(value=str(palette) if palette.is_dir() else "")
         self.kart_color_info_var = tk.StringVar(value="Select a kart mod and a palette folder. Blue stays as the original atlas.")
+        # Paired CTR retail-native track assets. The game loader decides
+        # when to activate a package; importing never replaces retail files.
+        sample_game = find_installed_game()
+        self.track_game_var = tk.StringVar(value=sample_game)
+        self.track_lev_var = tk.StringVar()
+        self.track_vrm_var = tk.StringVar()
+        self.track_name_var = tk.StringVar(value="My Custom Track")
+        self.track_slug_var = tk.StringVar(value="my_custom_track")
+        self.track_author_var = tk.StringVar()
+        self.track_description_var = tk.StringVar()
+        self.track_info_var = tk.StringVar(
+            value="LEV + VRM only. Import is staged; does not replace Crash Cove or start the game.")
         self.own_wheels_var = tk.BooleanVar(value=True)
         self.icon_mode_var = tk.StringVar(value="retail")
         self.retail_icon_var = tk.StringVar(value="coco")
@@ -149,7 +183,7 @@ class App(tk.Tk):
         self.ox_var = tk.StringVar(value="0.0")
         self.oy_var = tk.StringVar(value="0.0")
         self.oz_var = tk.StringVar(value="0.0")
-        self.game_var = tk.StringVar(value=DEFAULT_GAME_ROOT)
+        self.game_var = tk.StringVar(value=find_installed_game() or DEFAULT_GAME_ROOT)
         self.output_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready")
         self.last_stats = None
@@ -237,10 +271,10 @@ class App(tk.Tk):
         header.pack(fill="x", pady=(0, 14))
         title_box = ttk.Frame(header)
         title_box.pack(side="left")
-        ttk.Label(title_box, text="Crash Forge Character Tool", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(title_box, text="Crash Forge Model Importer", style="Title.TLabel").pack(anchor="w")
         self.subtitle_label = ttk.Label(
             title_box,
-            text="Build ready-to-drop Crash Forge Racing character mods.",
+            text="Characters, modular kart colors and native CTR LEV/VRM track packages.",
             style="Subtitle.TLabel",
             justify="left")
         self.subtitle_label.pack(anchor="w", pady=(2, 0))
@@ -258,6 +292,52 @@ class App(tk.Tk):
         source_line.pack(fill="x")
         ttk.Entry(source_line, textvariable=self.obj_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
         ttk.Button(source_line, text="Browse OBJ...", command=self.choose_obj).pack(side="left")
+
+        track_border, tracks = self._card(root)
+        track_border.pack(fill="x", pady=(0, 12))
+        self._section_title(
+            tracks, "CUSTOM TRACKS  /  .LEV + .VRM",
+            "Native CTR geometry, collisions and textures only. OBJ/MTL tracks are unsupported.")
+        line = ttk.Frame(tracks, style="Panel.TFrame")
+        line.pack(fill="x", pady=(4, 2))
+        ttk.Label(line, text="Level (.lev)", style="Panel.TLabel",
+                  width=15).pack(side="left")
+        ttk.Entry(line, textvariable=self.track_lev_var).pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(line, text="Browse LEV...", command=self._choose_track_lev).pack(
+            side="right")
+        line = ttk.Frame(tracks, style="Panel.TFrame")
+        line.pack(fill="x", pady=2)
+        ttk.Label(line, text="Textures (.vrm)", style="Panel.TLabel",
+                  width=15).pack(side="left")
+        ttk.Entry(line, textvariable=self.track_vrm_var).pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(line, text="Browse VRM...", command=self._choose_track_vrm).pack(
+            side="right")
+        meta = ttk.Frame(tracks, style="Panel.TFrame")
+        meta.pack(fill="x", pady=(6, 0))
+        self._field(meta, "Track name", self.track_name_var, 0)
+        self._field(meta, "Track ID", self.track_slug_var, 1)
+        ttk.Button(meta, text="Auto", command=self._auto_track_slug,
+                   style="Ghost.TButton").grid(row=1, column=2, padx=(8, 0))
+        self._field(meta, "Author (optional)", self.track_author_var, 2)
+        self._field(meta, "Description", self.track_description_var, 3)
+        line = ttk.Frame(tracks, style="Panel.TFrame")
+        line.pack(fill="x", pady=(7, 3))
+        ttk.Label(line, text="Game folder", style="Panel.TLabel",
+                  width=15).pack(side="left")
+        ttk.Entry(line, textvariable=self.track_game_var).pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(line, text="Browse...", command=self._choose_track_game).pack(
+            side="right")
+        line = ttk.Frame(tracks, style="Panel.TFrame")
+        line.pack(fill="x", pady=(6, 2))
+        ttk.Button(line, text="Validate Pair", command=self._validate_native_track).pack(
+            side="left")
+        ttk.Button(line, text="Install Track Package", command=self._install_native_track,
+                   style="Accent.TButton").pack(side="right")
+        ttk.Label(tracks, textvariable=self.track_info_var, style="Muted.TLabel",
+                  wraplength=860, justify="left").pack(fill="x", anchor="w", pady=(5, 0))
 
         palette_border, palette = self._card(root)
         palette_border.pack(fill="x", pady=(0, 12))
@@ -408,6 +488,85 @@ class App(tk.Tk):
         self.build_button.pack(side="right")
         self._actions_frame = actions
         self.after_idle(lambda: self._update_responsive_layout(self.winfo_width()))
+
+    def _auto_track_slug(self):
+        try:
+            self.track_slug_var.set(track_slugify(self.track_name_var.get()))
+        except NativeTrackError as exc:
+            self.track_info_var.set(str(exc))
+
+    def _choose_track_lev(self):
+        path = filedialog.askopenfilename(
+            title="Choose CTR native .lev level", filetypes=[
+                ("CTR LEV", "*.lev"), ("All files", "*.*")])
+        if path:
+            self.track_lev_var.set(path)
+            # Normal CTR asset pairs share the same folder and basename.
+            other = Path(path).with_suffix(".vrm")
+            if other.is_file() and not self.track_vrm_var.get().strip():
+                self.track_vrm_var.set(str(other))
+            self._validate_native_track()
+
+    def _choose_track_vrm(self):
+        path = filedialog.askopenfilename(
+            title="Choose CTR native .vrm textures",
+            filetypes=[("CTR VRM", "*.vrm"), ("All files", "*.*")])
+        if path:
+            self.track_vrm_var.set(path)
+            self._validate_native_track()
+
+    def _choose_track_game(self):
+        path = filedialog.askdirectory(
+            title="Installed Crash Forge Racing game folder",
+            initialdir=self.track_game_var.get().strip() or str(TOOL_DIR.parent))
+        if path:
+            self.track_game_var.set(path)
+
+    def _validate_native_track(self):
+        try:
+            stats = inspect_native_track(
+                self.track_lev_var.get().strip(), self.track_vrm_var.get().strip())
+            self.track_info_var.set(
+                "Pair verified: LEV " + str(stats["lev_size"] // 1024) +
+                " KiB, VRM " + str(stats["vrm_size"] // 1024) +
+                " KiB. Native file structure checked; gameplay compatibility "
+                "still requires the game's track registration.")
+            self.status_var.set("Native track pair validated")
+        except (NativeTrackError, OSError, UnicodeError) as exc:
+            self.track_info_var.set(str(exc))
+            self.status_var.set("Invalid LEV/VRM pair")
+
+    def _install_native_track(self):
+        try:
+            inputs = dict(
+                lev_path=self.track_lev_var.get().strip(),
+                vrm_path=self.track_vrm_var.get().strip(),
+                game_path=self.track_game_var.get().strip(),
+                track_name=self.track_name_var.get().strip(),
+                track_slug=self.track_slug_var.get().strip(),
+                author=self.track_author_var.get().strip(),
+                description=self.track_description_var.get().strip())
+            preview = install_native_track(**inputs, dry_run=True)
+            if not messagebox.askyesno(
+                APP_TITLE, "Install native track package?\n\n" +
+                preview["name"] + "\n" + preview["target"] +
+                "\n\nThe original retail levels will NOT be changed. "
+                "Custom-track runtime registration is not yet enabled."):
+                return
+            result = install_native_track(**inputs)
+            self.track_info_var.set(
+                "INSTALLED: " + result["target"] +
+                ". LEV/VRM hashes verified. Retail levels unchanged. "
+                "Awaiting native game track registration.")
+            self.status_var.set("Track package prepared")
+            messagebox.showinfo(
+                APP_TITLE, "Native CTR track package installed.\n\n" +
+                result["target"] +
+                "\n\nThe game will need a native custom-track registry before "
+                "this map can be selected. Crash Cove is unchanged.")
+        except (NativeTrackError, OSError, UnicodeError) as exc:
+            self.track_info_var.set(str(exc))
+            messagebox.showerror(APP_TITLE, str(exc))
 
     def _choose_kart_mod(self):
         initial = self.kart_mod_dir_var.get().strip() or str(TOOL_DIR.parent)
@@ -891,7 +1050,8 @@ if __name__ == "__main__":
     if "--self-test" in sys.argv:
         # Portable EXE smoke test; intentionally never opens a window/game.
         from crash_forge_kart_colors import PALETTE, KartColorError
-        if len(PALETTE) < 2:
+        from crash_forge_native_tracks import SLUG_RE, MAX_LEV
+        if len(PALETTE) < 2 or MAX_LEV <= 4096 or SLUG_RE.fullmatch("demo-track") is None:
             raise SystemExit(1)
         raise SystemExit(0)
     App().mainloop()

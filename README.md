@@ -14,6 +14,15 @@ The ZIP also includes the separate **ForgeLauncherUpdater.exe** and the runtime 
 
 If no Releases are available, the launcher distribution has not been published yet. Do not download unofficial installers.
 
+## Native tracks (experimental packager)
+
+Model Importer v1.7 accepts only paired LEV + VRM files in its
+CUSTOM TRACKS card. It validates basic headers and hashes, then installs
+a non-destructive package to assets/mods/tracks/<track-id>/ with its
+own track.ini. No OBJ tracks or retail Crash Cove replacements are made.
+Runtime registration and menu selection are still needed before these
+packages can be played; installing alone does not activate a track.
+
 ## Bundled Model Importer
 
 From launcher v0.3.32, **EDITOR > MODEL IMPORTER** opens `CrashForgeModelImporter.exe`, bundled in `_internal/editor_tools/`. It supports importing native modular racers and editing existing kart color variants with one OBJ and multiple PNG textures. The updater installs future revisions of the bundled editor together with a newer launcher release, using the same verified ZIP and rollback; do not update the editor through a separate, unsigned download. User-created mods and game files are never part of the launcher release.

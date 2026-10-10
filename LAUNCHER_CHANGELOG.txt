@@ -1,5 +1,11 @@
 Crash Forge: Racing Launcher
 
+v0.3.33
+- Model Importer v1.7: stage CTR-native LEV + VRM track packages in mods/tracks with their own track.ini.
+- Reject OBJ/MTL tracks, preserve file checksums and retain previous package backups.
+- Never replace retail maps, including Crash Cove; native track selection support remains a separate game-side task.
+- Keep all previous model, kart color, modular modpack, NEWS and updater features.
+
 v0.3.32
 - Bundle Model Importer v1.6 as an independently launched Windows EXE within the signed-checksum launcher ZIP.
 - Enable EDITOR > MODEL IMPORTER to open the bundled tool for racer assets and one-OBJ kart color variants.

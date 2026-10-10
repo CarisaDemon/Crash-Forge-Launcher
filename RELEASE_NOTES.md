@@ -1,7 +1,8 @@
-# Crash Forge: Racing Launcher - v0.3.32
+# Crash Forge: Racing Launcher v0.3.33
 
-- Model Importer v1.6 now ships inside the Windows launcher and opens from EDITOR.
-- New kart color palette importer: one OBJ, alternate textures, independent .ini variants without duplicating Blue.
-- Future bundled Model Importer updates arrive automatically through launcher updates.
-- Redesigned NEWS: large garage artwork and concise release highlights at the front.
-- Preserves the verified self-updater, rollback, Modpacks, gameplay paths and Windows EXE restart.
+- Crash Forge Model Importer v1.7: NEW native CTR track packager for paired .LEV and .VRM files; OBJ track support deliberately disabled.
+- Verify native file structure and SHA-256, preserve original retail levels, and back up older same-ID track packages before replacement.
+- Model Importer ships with the launcher under EDITOR > MODEL IMPORTER, so future tool improvements update through the verified launcher auto-updater.
+- Assembly Lane's legacy Crash Cove takeover is retired in the local game build; Crash Cove stays original. This game fix is separate from the launcher release.
+- Track package import is preparation only; game-side custom track registration/selection is still required for playability.
+- Previous v0.3.32 large NEWS cover and UI are preserved.
