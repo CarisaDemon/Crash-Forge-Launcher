@@ -10,7 +10,7 @@ class BundledImporterTests(unittest.TestCase):
         source = (ROOT/"launcher.py").read_text(encoding="utf-8")
         self.assertIn('"_internal", "editor_tools"', source)
         self.assertIn('action=(lambda: self._launch_editor_tool(model_tool))', source)
-        self.assertIn('"CHARACTERS / KARTS / TRACKS"', source)
+        self.assertIn('"CHARACTERS / KARTS / WHEELS / TRACKS"', source)
         self.assertNotIn("_install_or_open_model_importer", source)
 
     def test_build_includes_tool_not_separate_release_asset(self):
