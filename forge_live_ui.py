@@ -831,27 +831,33 @@ class ForgeLiveMixin:
         if self.mod_download_busy or self.game_update_busy:
             self.hub_status_label.configure(text="Another verified download is already active.")
             return
+        local_zip = (mod.get("source") == "local" and
+                     bool(mod.get("package_path")))
         url = mod.get("download_url")
         sha256 = mod.get("sha256")
-        if not url or not sha256:
+        if not sha256 or (not local_zip and not url):
             self.hub_status_label.configure(
-                text="This publisher has not provided an HTTPS ZIP with SHA-256. Open its Details page.")
+                text="A real local ZIP or published HTTPS ZIP with SHA-256 is required.")
             return
         if not services.real_game_status(self.game_install_path)["installed"]:
             self.hub_status_label.configure(text="Select an installed ctr-native.exe game folder first.")
             return
         consent = messagebox.askyesno(
             "Forge Hub - Install Mod",
-            f"Install {mod['title']} by {mod['author']}?\n\n"
-            "Source: published community catalog.\n"
-            "ZIP will be verified with SHA-256 and installed by category.\n"
-            "A previous version of the same mod will be backed up.",
+            f"Install {mod['title']} by {mod['author']}?\n\n" +
+            ("Source: your selected local ZIP.\n" if local_zip else
+             "Source: published Forge Hub catalog.\n") +
+            "ZIP will be SHA-256 verified and installed to assets/mods/<mod-id>.\n"
+            "Existing copies of this mod are backed up; other mods are untouched.",
             parent=self)
         if not consent:
             return
         self.mod_download_busy = True
-        self.hub_status_label.configure(text="Starting verified download...")
-        self.set_download_status(percent=0, state="CONNECTING",
+        self.hub_status_label.configure(
+            text="Verifying local ZIP..." if local_zip
+            else "Starting verified download...")
+        self.set_download_status(percent=0, state="VERIFYING ZIP" if local_zip
+                                 else "CONNECTING",
                                  filename=mod["title"], amount="0 MB", time_remaining="")
 
         def progress(done, total, speed):
@@ -859,7 +865,9 @@ class ForgeLiveMixin:
 
         def worker():
             try:
-                dest = services.download_install_mod(
+                installer = (services.install_local_mod if local_zip
+                             else services.download_install_mod)
+                dest = installer(
                     mod, self.game_install_path, progress=progress)
                 self.online_queue.put(("mod_ok", (mod, dest)))
             except Exception as exc:

@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.39
+- Forge Hub is now an installed-mod manager with Installed Only and Hide Local filters.
+- Verified ZIP mods install in separate web-ID folders with native INI enable switches.
+- Modpacks also keep every component in its own ID folder, with safe backups.
+- Model Importer, CSEQ/MIDI and OGG Toolkit now ship as bundled Windows EXEs.
+- Original local mods remain untouched; native loader and tracks are still being tested.
+
 v0.3.38
 - Redesigned Model Importer v1.8: Home, Character, Kart, Wheels and Tracks workspaces.
 - Improved modular OBJ imports, offsets, kart colors and four-wheel mounts.

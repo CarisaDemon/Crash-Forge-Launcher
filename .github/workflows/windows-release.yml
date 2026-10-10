@@ -89,7 +89,7 @@ jobs:
             build/release/Crash-Forge-Launcher-Windows.zip.sha256
 
 
-      - name: Attach images to the original two releases
+      - name: Attach news images to their exact release tags
         # No new release versions: replace image assets on existing tags.
         if: >-
           startsWith(github.ref, 'refs/tags/v') ||
@@ -99,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          foreach ($version in @("0.3.37", "0.3.38")) {
+          foreach ($version in @("0.3.37", "0.3.38", "0.3.39")) {
             $file = Join-Path "assets/news" ("forge-news-v" + $version + ".webp")
             if (Test-Path -LiteralPath $file) {
               gh release upload ("v" + $version) $file --clobber --repo $env:GITHUB_REPOSITORY
@@ -115,7 +115,7 @@ jobs:
               $body = $prior -join "`n"
               $filename = Split-Path $file -Leaf
               if (-not $body.Contains($filename)) {
-                $caption = if ($version -eq "0.3.37") { "Forge Hub Website" } else { "Model Importer v1.8" }
+                $caption = switch ($version) { "0.3.37" { "Forge Hub Website" } "0.3.38" { "Model Importer v1.8" } default { "Forge Hub Mod Manager" } }
                 $art = "![Crash Forge " + $caption + "](https://github.com/" + $env:GITHUB_REPOSITORY + "/releases/download/v" + $version + "/" + $filename + ")"
                 $notes = Join-Path $env:RUNNER_TEMP ("cfr-existing-release-v" + $version + ".md")
                 [IO.File]::WriteAllText($notes, ($art + "`n`n" + $body), [Text.Encoding]::UTF8)

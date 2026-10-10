@@ -7,9 +7,10 @@ Archive format:
     wheels/<id>/wheels.ini         [wheel] name
     tracks/<id>/track.ini          [track] name
 
-Each included mod is installed independently. The pack itself is only an
-inventory under assets/mods/modpacks/<pack-id>. Backups and rollback protect
-existing user mods if any component fails.
+Each included mod is installed independently at assets/mods/<web-id>/.
+The pack inventory is also stored under assets/mods/<pack-id>/, never mixed
+with the assets in other mods. Legacy category folders are not migrated.
+Backups and rollback protect existing user mods if any component fails.
 """
 from __future__ import annotations
 
@@ -63,6 +64,7 @@ def inspect_modpack(contents: str | Path):
         raise ModpackError("Modpack compatibility must be cfr.")
 
     components = []
+    encountered_ids = set()
     expected_roots = set(FOLDERS) | {"modpack.ini"}
     for entry in root.iterdir():
         if entry.name not in expected_roots:
@@ -76,6 +78,9 @@ def inspect_modpack(contents: str | Path):
             slug = directory.name
             if not SLUG.fullmatch(slug) or not directory.is_dir() or directory.is_symlink():
                 raise ModpackError("Invalid mod folder identity: " + slug)
+            if slug in encountered_ids:
+                raise ModpackError("Modpack component IDs must be unique across all types: "+slug)
+            encountered_ids.add(slug)
             ini = directory / expected_file
             if not ini.is_file() or ini.is_symlink():
                 raise ModpackError(slug + " requires its own " + expected_file)
@@ -104,12 +109,16 @@ def install_prepared_modpack(contents: str | Path, game_path: str | Path, pack_i
     package = inspect_modpack(root)
     home = Path(game_path)
     mods_root = home / "assets" / "mods"
-    inventory = mods_root / "modpacks" / pack_id
+    inventory = mods_root / pack_id
+    if any(slug == pack_id for _, slug, _, _ in package["components"]):
+        raise ModpackError("Modpack ID cannot reuse a component web ID.")
     destinations = []
     for category, slug, source, title in package["components"]:
-        target = mods_root / category / slug
+        # Every module is a sibling of other modules, never merged into a
+        # shared racers/karts/wheels directory.
+        target = mods_root / slug
         destinations.append((source, target))
-    # Keep a local inventory, but do NOT wrap the components in an extra folder.
+    # The modpack is only an inventory, not an extra container of models.
     record_src = root / ".modpack-inventory"
     record_src.mkdir()
     shutil.copy2(root / "modpack.ini", record_src / "modpack.ini")
@@ -122,10 +131,20 @@ def install_prepared_modpack(contents: str | Path, game_path: str | Path, pack_i
         encoding="utf-8")
     destinations.append((record_src, inventory))
 
-    # A surprising symlink or file at any destination must not be replaced.
-    for _, target in destinations:
+    # Never clobber an unrelated module under the same permanent web ID.
+    for source, target in destinations:
         if target.is_symlink() or (target.exists() and not target.is_dir()):
             raise ModpackError("Unsafe or invalid existing mod destination: " + target.name)
+        if target.is_dir():
+            if target == inventory:
+                expected_ini = "modpack.ini"
+            else:
+                configs = [name for name, _ in FOLDERS.values()]
+                expected_ini = next((name for name in configs if (source/name).is_file()), "")
+            if not expected_ini or not (target/expected_ini).is_file():
+                raise ModpackError("Mod ID is already used by a different module: " + target.name)
+            if any(item.is_symlink() for item in target.rglob("*")):
+                raise ModpackError("Linked files in existing mod cannot be replaced.")
 
     transaction = uuid.uuid4().hex[:10]
     backup_root = home / ".forge_mod_backups" / ("pack_" + pack_id + "_" +

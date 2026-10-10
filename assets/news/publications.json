@@ -3,6 +3,20 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.39",
+      "title": "Forge Hub Mod Manager",
+      "date": "2026-10-10",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.39",
+      "notes": [
+        "Forge Hub now manages online and installed mods with search, categories, sorting, Installed Only and Hide Local.",
+        "Install or update verified ZIPs into individual assets/mods/<web-id> folders, each with native enabled metadata and a permanent ID.",
+        "Enable/Disable works on the game's native INI; old local mod folders remain available without forced migrations.",
+        "Modpacks install separately identified modules with backup/rollback, and keep each mod's own character, kart, wheels or track INI.",
+        "Model Importer, CSEQ/MIDI Toolkit and OGG Toolkit are bundled as Windows EXEs with the launcher and updater.",
+        "The native game loader has a separate candidate update for flat-ID modular mods; custom native track selection remains in development."
+      ]
+    },
+    {
       "version": "0.3.38",
       "title": "Model Importer v1.8 — Redesigned",
       "date": "2026-10-10",

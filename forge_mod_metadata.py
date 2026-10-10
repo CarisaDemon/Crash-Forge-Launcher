@@ -5,7 +5,7 @@ kart_drive/wheel_setup pairs. All previously uploaded/published mods keep
 the same stored data, download URLs and checksums.
 These labels do not modify native game physics.
 """
-MOD_TYPES = ("Character", "Kart", "Wheels", "Track", "Modpack")
+MOD_TYPES = ("Character", "Kart", "Wheels", "Track", "Modpack", "Music")
 MAP_KINDS = ("Race Track", "Battle Arena", "Hub")
 RACER_CLASSES = ("Balanced", "Speed", "Acceleration", "Turning")
 KART_DRIVES = ("Wheeled", "Hovercraft")  # Backward-compatible storage
@@ -98,4 +98,4 @@ def summary(mod):
         }.get(name, "Kart type not specified")
     if category == "Modpack":
         return "Bundle / Multiple individual CFR mods"
-    return "Wheel Set / Separate Add-on"
+    return "Music / Individual sound module" if category == "Music" else "Wheel Set / Separate Add-on"

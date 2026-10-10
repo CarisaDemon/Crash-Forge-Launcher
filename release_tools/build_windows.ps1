@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
@@ -48,6 +48,24 @@ if($LASTEXITCODE -ne 0){throw "Model Importer build failed"}
 $toolsTarget = Join-Path $exeDir "_internal\editor_tools"
 [IO.Directory]::CreateDirectory($toolsTarget) | Out-Null
 Copy-Item -LiteralPath (Join-Path $BuildRoot "model_importer\CrashForgeModelImporter.exe") -Destination (Join-Path $toolsTarget "CrashForgeModelImporter.exe") -Force
+
+# Include BOTH music editors in the same verified ZIP as the launcher.
+# Build EXEs, not BAT/PS1 files: the updater intentionally rejects scripts.
+$forgeBackground = (Join-Path $Source "assets\Fondo.png") + ";forge_assets"
+$forgeLogo = (Join-Path $Source "assets\icons\cfr_icon.png") + ";forge_assets/icons"
+$forgeIcon = (Join-Path $Source "assets\icons\cfr_icon.ico") + ";forge_assets/icons"
+$cseqIcon = (Join-Path $Source "companion_tools\cseq_toolkit\assets\cfr_icon.ico") + ";assets"
+Write-Output "Building bundled CSEQ/MIDI music toolkit..."
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "CrashForgeCSEQToolkit" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $forgeBackground --add-data $forgeLogo --add-data $cseqIcon --distpath (Join-Path $BuildRoot "cseq_toolkit") --workpath (Join-Path $workRoot "cseq_toolkit") --specpath $specRoot (Join-Path $Source "companion_tools\cseq_toolkit\gui.py")
+if($LASTEXITCODE -ne 0){throw "CSEQ Music Toolkit build failed"}
+Copy-Item -LiteralPath (Join-Path $BuildRoot "cseq_toolkit\CrashForgeCSEQToolkit.exe") -Destination (Join-Path $toolsTarget "CrashForgeCSEQToolkit.exe") -Force
+
+$oggSource = (Join-Path $Source "companion_tools\ogg_toolkit\CTR_Music_Toolkit_GUI.ps1") + ";."
+Write-Output "Building bundled OGG music toolkit..."
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --name "CrashForgeOGGToolkit" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $oggSource --add-data $forgeBackground --add-data $forgeLogo --add-data $forgeIcon --distpath (Join-Path $BuildRoot "ogg_toolkit") --workpath (Join-Path $workRoot "ogg_toolkit") --specpath $specRoot (Join-Path $Source "companion_tools\ogg_toolkit\ogg_launcher.py")
+if($LASTEXITCODE -ne 0){throw "OGG Music Toolkit build failed"}
+Copy-Item -LiteralPath (Join-Path $BuildRoot "ogg_toolkit\CrashForgeOGGToolkit.exe") -Destination (Join-Path $toolsTarget "CrashForgeOGGToolkit.exe") -Force
+
 $assets = @(
   @{Source="assets\Fondo.png"; Target="assets\Fondo.png"},
   @{Source="assets\icons\cfr_icon.png"; Target="assets\icons\cfr_icon.png"},

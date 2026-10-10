@@ -16,6 +16,7 @@ import urllib.parse
 import zipfile
 import forge_mod_metadata as modmeta
 import forge_modpacks
+import forge_mod_manager as mod_manager
 from datetime import datetime
 
 DEFAULT_GAME_PATH = r"C:\Crash Team Racing\Crash Team Racing Compiled Custom Music"
@@ -25,10 +26,10 @@ MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ZIP_ITEMS = 2000
 ALLOWED_MOD_EXT = {
     ".obj", ".mtl", ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".ini",
-    ".cfg", ".json", ".txt", ".md", ".wav", ".ogg", ".cseq", ".bin",
+    ".cfg", ".json", ".txt", ".md", ".wav", ".ogg", ".cseq", ".bin", ".sf2", ".lev", ".vrm",
     ".dds", ".webp", ".gif", ".xml", ".dat", ".gltf", ".glb",
 }
-MOD_FOLDERS = {"Character": "racers", "Kart": "karts", "Wheels": "wheels", "Track": "tracks", "Modpack": "modpacks"}
+MOD_FOLDERS = {"Character": "racers", "Kart": "karts", "Wheels": "wheels", "Track": "tracks", "Modpack": "modpacks", "Music": "music"}
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -247,76 +248,168 @@ def _verify_archive(z):
     return members
 
 
-def download_install_mod(mod, game_path, progress=None):
-    """Download a verified ZIP and install beneath assets/mods; rollback on failure."""
-    kind = mod.get("type", "")
+def _install_verified_zip(mod, game_path, archive):
+    """Transactional per-mod archive, with native IDs and a separate folder."""
+    import forge_mod_manager as manager
+
+    kind = str(mod.get("type", ""))
     slug = str(mod.get("id", ""))
     if kind not in MOD_FOLDERS or not SLUG_RE.fullmatch(slug):
         raise FeedError("Invalid mod identity or type.")
-    url = checked_https_url(mod.get("download_url", ""))
+    if not real_game_status(game_path)["installed"]:
+        raise FeedError("Select a valid Crash Forge game install before installing mods.")
+    destination = manager.mod_path(game_path, kind, slug)
+    parent = destination.parent
+    if parent.is_symlink() or destination.is_symlink():
+        raise FeedError("Cannot overwrite linked mod directories.")
+    # A web ID names one stable module, not one module per category.
+    # Do not silently overwrite a different type that happens to share an ID.
+    if destination.is_dir():
+        for other_kind, (_, config, _) in manager.CATEGORIES.items():
+            if other_kind != kind and (destination / config).is_file():
+                raise FeedError(
+                    "Web mod ID already belongs to a different category: " +
+                    other_kind)
+    with tempfile.TemporaryDirectory(prefix=".forge-mod-prepare-", dir=game_path) as temp:
+        contents = os.path.join(temp, "contents")
+        os.makedirs(contents)
+        try:
+            with zipfile.ZipFile(archive, "r") as z:
+                files = _verify_archive(z)
+                for info in files:
+                    if info.is_dir():
+                        continue
+                    rel = info.filename.replace("/", os.sep)
+                    target = os.path.normpath(os.path.join(contents, rel))
+                    if os.path.commonpath((contents, target)) != contents:
+                        raise FeedError("Unsafe path inside mod ZIP.")
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    with z.open(info,"r") as src,open(target,"wb") as output:
+                        shutil.copyfileobj(src,output)
+            if kind == "Modpack":
+                # Apply the same stable identity scheme to a modpack and its
+                # independently-scanned components before the game is touched.
+                package = forge_modpacks.inspect_modpack(contents)
+                for directory, child, path, title in package["components"]:
+                    child_kind = manager.category_for_directory(directory)
+                    ini = path / manager.CATEGORIES[child_kind][1]
+                    manager._edit_ini(ini,child_kind,child,enabled=True,
+                        meta={"id":child,"type":child_kind,"name":title,
+                              "version":str(mod.get("version") or "1.0"),
+                              "source":"forge_hub","source_id":slug})
+                manager.ensure_modpack_identity(contents,slug,
+                    str(mod.get("title") or package["name"])[:100],
+                    str(mod.get("version") or "1.0")[:40],
+                    "local" if mod.get("source")=="local" else "forge_hub")
+                previous = None
+                try:
+                    previous = manager.read_mod(game_path,kind,slug)
+                except manager.ModManagerError:
+                    pass
+                installed=forge_modpacks.install_prepared_modpack(contents,game_path,slug)
+                if previous and previous.get("enabled") is False:
+                    manager.set_enabled(game_path,kind,slug,False)
+                return installed
+            previous_enabled = None
+            if destination.is_dir():
+                try:
+                    previous_enabled = manager.read_mod(
+                        game_path,kind,slug).get("enabled")
+                except manager.ModManagerError:
+                    pass
+            prepared = manager.prepare_single_mod(
+                contents, mod, preserve_enabled=previous_enabled)
+        except (zipfile.BadZipFile, manager.ModManagerError,
+                forge_modpacks.ModpackError) as exc:
+            raise FeedError(str(exc)) from exc
+        # Previous same-category mod is backed up, never deleted.
+        if destination.exists() and not destination.is_dir():
+            raise FeedError("Existing mod target is not a directory.")
+        parent.mkdir(parents=True, exist_ok=True)
+        backup = None
+        if destination.is_dir():
+            backups = os.path.join(game_path, ".forge_mod_backups")
+            os.makedirs(backups, exist_ok=True)
+            ident = manager.CATEGORIES[kind][0]+"_"+slug+"_"
+            backup = os.path.join(
+                backups, ident + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+            os.replace(destination, backup)
+        try:
+            os.replace(prepared, destination)
+        except BaseException:
+            if backup and not destination.exists():
+                os.replace(backup,destination)
+            raise
+    return str(destination)
+
+
+def _checked_mod(mod, game_path):
+    kind=str(mod.get("type",""))
+    slug=str(mod.get("id",""))
+    if kind not in MOD_FOLDERS or not SLUG_RE.fullmatch(slug):
+        raise FeedError("Invalid mod identity or type.")
     sha256 = str(mod.get("sha256", "")).lower()
     if not SHA256_RE.fullmatch(sha256):
         raise FeedError("A SHA-256 checksum is required to install.")
     if not real_game_status(game_path)["installed"]:
         raise FeedError("Select a valid Crash Forge game install before installing mods.")
-    dest_parent = os.path.join(game_path, "assets", "mods", MOD_FOLDERS[kind])
-    dest = os.path.join(dest_parent, slug)
-    os.makedirs(dest_parent, exist_ok=True)
-    backup = None
-    with tempfile.TemporaryDirectory(prefix=".cfr-staging-", dir=game_path) as staging:
-        archive = os.path.join(staging, "download.zip")
+    return sha256
+
+
+def install_local_mod(mod, game_path, progress=None):
+    """Install a local ZIP with the SAME validation and SHA-256 as online mods."""
+    sha256 = _checked_mod(mod,game_path)
+    package = os.path.abspath(str(mod.get("package_path", "")))
+    if not os.path.isfile(package) or os.path.islink(package):
+        raise FeedError("Choose a valid local .zip (not a shortcut).")
+    if not package.lower().endswith(".zip"):
+        raise FeedError("Only ZIP packages are supported.")
+    if os.path.getsize(package)>MAX_MOD_BYTES:
+        raise FeedError("Local mod ZIP exceeds the size limit.")
+    size=os.path.getsize(package)
+    digest=hashlib.sha256()
+    done=0
+    with open(package,"rb") as stream:
+        while True:
+            block=stream.read(262144)
+            if not block: break
+            digest.update(block)
+            done+=len(block)
+            if progress:
+                progress(done,size,0)
+    if digest.hexdigest()!=sha256:
+        raise FeedError("Local ZIP changed since ADD LOCAL. Add it again before installing.")
+    return _install_verified_zip(mod,game_path,package)
+
+
+def download_install_mod(mod, game_path, progress=None):
+    """Download a verified HTTPS ZIP and install isolated native mod modules."""
+    sha256 = _checked_mod(mod,game_path)
+    url = checked_https_url(mod.get("download_url", ""))
+    digest = hashlib.sha256()
+    received = 0
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix=".forge-download-",dir=game_path) as temp:
+        package = os.path.join(temp,"download.zip")
         request = urllib.request.Request(
-            url, headers={"User-Agent": "CrashForgeLauncher/0.3"})
-        digest = hashlib.sha256()
-        count = 0
-        started = time.monotonic()
-        with urllib.request.urlopen(request, timeout=20) as response:
+            url, headers={"User-Agent":"CrashForgeLauncher/ModManager"})
+        with urllib.request.urlopen(request,timeout=20) as response:
             checked_https_url(response.geturl())
-            total = int(response.headers.get("Content-Length", "0") or 0)
-            if total > MAX_MOD_BYTES:
+            total=int(response.headers.get("Content-Length","0") or 0)
+            if total>MAX_MOD_BYTES:
                 raise FeedError("Mod ZIP is too large.")
-            with open(archive, "wb") as f:
+            with open(package,"wb") as out:
                 while True:
-                    block = response.read(256 * 1024)
-                    if not block:
-                        break
-                    count += len(block)
-                    if count > MAX_MOD_BYTES:
+                    block=response.read(262144)
+                    if not block:break
+                    received+=len(block)
+                    if received>MAX_MOD_BYTES:
                         raise FeedError("Mod ZIP exceeds the size limit.")
                     digest.update(block)
-                    f.write(block)
+                    out.write(block)
                     if progress:
-                        progress(count, total, count / max(0.01, time.monotonic() - started))
-        if digest.hexdigest() != sha256:
+                        speed=received/max(time.monotonic()-started,0.01)
+                        progress(received,total,speed)
+        if digest.hexdigest()!=sha256:
             raise FeedError("SHA-256 mismatch. Download was rejected without installing.")
-        contents = os.path.join(staging, "contents")
-        os.makedirs(contents)
-        with zipfile.ZipFile(archive, "r") as z:
-            members = _verify_archive(z)
-            for info in members:
-                if info.is_dir():
-                    continue
-                subpath = info.filename.replace("/", os.sep)
-                path = os.path.normpath(os.path.join(contents, subpath))
-                if os.path.commonpath((contents, path)) != contents:
-                    raise FeedError("Mod ZIP attempted directory traversal.")
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with z.open(info, "r") as src, open(path, "wb") as target:
-                    shutil.copyfileobj(src, target)
-        if kind == "Modpack":
-            return forge_modpacks.install_prepared_modpack(contents, game_path, slug)
-        # Save only this mod's previous folder; leave all other mods untouched.
-        if os.path.isdir(dest):
-            backups = os.path.join(game_path, ".forge_mod_backups")
-            os.makedirs(backups, exist_ok=True)
-            backup = os.path.join(backups, slug + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
-            if os.path.exists(backup):
-                raise FeedError("Backup already exists; installation canceled.")
-            os.replace(dest, backup)
-        try:
-            os.replace(contents, dest)
-        except Exception:
-            if backup and not os.path.exists(dest):
-                os.replace(backup, dest)
-            raise
-    return dest
+        return _install_verified_zip(mod,game_path,package)

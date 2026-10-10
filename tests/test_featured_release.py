@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FeaturedReleaseTests(unittest.TestCase):
-    def test_original_editor_screenshot_is_shipped(self):
+    def test_new_modmanager_screenshot_is_shipped(self):
         path = ROOT / "assets" / "news" / "latest_update.webp"
         self.assertTrue(path.is_file())
         with Image.open(path) as photo:
-            self.assertEqual(photo.size, (898, 436))
+            self.assertEqual(photo.size, (1536, 693))
             self.assertEqual(photo.format, "WEBP")
             photo.verify()
 
@@ -31,7 +31,7 @@ class FeaturedReleaseTests(unittest.TestCase):
 
     def test_release_highlights_have_english_summary_and_version(self):
         version, highlights = forge_services.real_launcher_changelog(str(ROOT), limit=3)
-        self.assertEqual(version, "v0.3.38")
+        self.assertEqual(version, "v0.3.39")
         self.assertEqual(len(highlights), 3)
         self.assertTrue(all(15 <= len(row) < 100 for row in highlights))
 

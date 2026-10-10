@@ -14,6 +14,7 @@ import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
+import forge_mod_manager as mod_manager
 
 try:
     from PIL import Image, ImageTk, ImageOps
@@ -755,9 +756,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         compact = height < 780
         scale = min(width / BASE_WIDTH, height / BASE_HEIGHT)
 
-        # A three-column dashboard is only useful if it can display BOTH
-        # the CHANGELOG and the actual SETTINGS controls. Previously only
-        # the Settings header remained visible below 980px screen height.
+        # Keep News, Installation, and Settings responsive. Update notes
+        # are now displayed beside the artwork in the hero, not as a
+        # separate, competing CHANGELOG panel.
         wide_dashboard_target = 210 if short else (235 if compact else 270)
         wide_min_top = 405 if short else (450 if compact else 490)
         wide_top = max(wide_min_top,
@@ -915,7 +916,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._paint_hero()
 
     def _select_dashboard_tab(self, tab):
-        if tab not in ("NEWS", "INSTALLATION", "CHANGELOG", "SETTINGS"):
+        if tab not in ("NEWS", "INSTALLATION", "SETTINGS"):
             return
         if tab == "SETTINGS" and self.winfo_height() < 640:
             # On very short windows a compact, resizable settings dialog
@@ -927,22 +928,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._apply_responsive_layout()
 
     def _arrange_right_cards(self, tabbed):
-        """Give Settings all available room in compact layout."""
-        presentation = (
-            "settings" if tabbed and self._active_dashboard_tab == "SETTINGS"
-            else "changelog" if tabbed else "columns")
+        """Keep Settings usable as the only right-hand dashboard card."""
+        presentation = "settings-tab" if tabbed else "settings-rail"
         if getattr(self, "_right_card_layout_state", None) == presentation:
             return
         self.settings_panel.pack_forget()
-        self.changelog_panel.pack_forget()
-        if presentation == "settings":
-            self.settings_panel.pack(side="top", fill="both", expand=True)
-        elif presentation == "changelog":
-            self.changelog_panel.pack(side="top", fill="both", expand=True)
-        else:
-            self.settings_panel.pack(side="bottom", fill="x", pady=(7, 0))
-            self.changelog_panel.pack(
-                side="top", fill="both", expand=True, pady=(0, 7))
+        self.settings_panel.pack(side="top", fill="both", expand=True)
         self._right_card_layout_state = presentation
 
     def _sync_dashboard_layout(self, tabbed):
@@ -958,7 +949,6 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 panes = {
                     "NEWS": self.news_panel,
                     "INSTALLATION": self.install_panel,
-                    "CHANGELOG": self.right_panel,
                     "SETTINGS": self.right_panel}
                 active = panes.get(self._active_dashboard_tab,
                                    self.install_panel)
@@ -1143,7 +1133,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             self.lower_dashboard, bg="#0B0E12", height=34)
         self.dashboard_tabs.pack_propagate(False)
         self._dashboard_buttons = {}
-        for title in ("NEWS", "INSTALLATION", "CHANGELOG", "SETTINGS"):
+        for title in ("NEWS", "INSTALLATION", "SETTINGS"):
             label = tk.Label(
                 self.dashboard_tabs, text=title,
                 bg="#11151A", fg="#C0C3C6", cursor="hand2",
@@ -1172,8 +1162,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             highlightbackground="#2B3037",
             highlightthickness=1,
         )
-        # Pack the flexible middle AFTER the right rail, so it cannot
-        # squeeze CHANGELOG / SETTINGS below their usable width.
+        # Pack the flexible middle AFTER the Settings rail so controls
+        # remain usable and NEWS can keep its independent scrollable history.
         self._installation_panel(self.install_panel)
 
         self.right_panel = tk.Frame(self.lower_dashboard, bg=COLORS["bg"], width=300)
@@ -2252,7 +2242,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         if hasattr(self, "download_card") and not visible:
             # Dashboard geometry is owned by _sync_dashboard_layout.
             # A background status update must never re-pack Installation
-            # on top of NEWS / CHANGELOG in the compact tab layout.
+            # on top of NEWS / SETTINGS in the compact tab layout.
             self.download_card.pack_forget()
             self._dashboard_layout_state = None
 
@@ -2447,7 +2437,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         featured = archived[0] if archived else None
         if featured:
             release = "v" + featured["version"]
-            highlights = featured.get("notes", [])[:3]
+            highlights = featured.get("notes", [])[:5]
         else:
             release, highlights = services.real_launcher_changelog(
                 BASE_DIR, limit=3)
@@ -2474,10 +2464,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                       font=("Bahnschrift SemiBold",
                             max(11, int(round(14*s)))), tags="hero")
 
-        # Read the SAME changelog as NEWS; no duplicate hardcoded copy.
-        row_y = 159 if h >= 315 else 143
+        # The homepage is the changelog summary: keep it beside the
+        # accompanying image. The full append-only history stays in NEWS.
+        row_y = 158 if h >= 315 else 139
         bottom_y = h - 53
-        limit = 3 if h >= 355 else (2 if h >= 285 else 1)
+        limit = 5 if h >= 470 else (4 if h >= 390 else
+                                  (3 if h >= 340 else (2 if h >= 285 else 1)))
         char_width = max(24, min(50, int(copy_width / max(5.7, 6.1*s))))
         for note in highlights[:limit]:
             rows = textwrap.wrap(str(note), width=char_width,
@@ -2494,7 +2486,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                           anchor="nw", fill="#DBDEE1",
                           font=("Bahnschrift", max(8, int(round(9*s)))),
                           justify="left", tags="hero")
-            row_y += text_height + 13
+            row_y += text_height + (11 if h < 390 else 13)
 
         # Installed status remains legible above the picture, without
         # covering its content or colliding with the release text.
@@ -2573,47 +2565,11 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
     def _right_cards(self, parent):
         self.settings_panel = tk.Frame(
-            parent, bg="#0F1115", height=147,
-            highlightbackground="#2B3037", highlightthickness=1)
-        self.settings_panel.pack(side="bottom", fill="x", pady=(7, 0))
-        self.settings_panel.pack_propagate(False)
-        self._settings_card(self.settings_panel)
-
-        changelog = tk.Frame(
             parent, bg="#0F1115",
             highlightbackground="#2B3037", highlightthickness=1)
-        self.changelog_panel = changelog
-        changelog.pack(side="top", fill="both", expand=True, pady=(0, 7))
-        self._changelog_card(changelog)
-
-    def _changelog_card(self, parent):
-        header = tk.Frame(parent, bg="#0F1115")
-        header.pack(fill="x", padx=14, pady=(10, 5))
-        tk.Label(header, text="CHANGELOG", bg="#0F1115",
-                 fg=COLORS["text"],
-                 font=("Bahnschrift SemiBold", 10)).pack(side="left")
-        version, notes = services.real_launcher_changelog(BASE_DIR)
-        tk.Label(header, text=version or "LOCAL", bg="#0F1115",
-                 fg="#858A92", font=("Bahnschrift", 8)).pack(side="right")
-
-        container = tk.Frame(parent, bg="#0F1115")
-        container.pack(fill="both", expand=True, padx=(12, 6), pady=(0, 6))
-        scroll = tk.Scrollbar(
-            container, orient="vertical", bg="#20252C",
-            troughcolor="#0F1217", activebackground=COLORS["orange"],
-            width=9, relief="flat", bd=0)
-        scroll.pack(side="right", fill="y")
-        self.changelog_text = tk.Text(
-            container, wrap="word", bg="#0F1115", fg="#A5A9AF",
-            font=("Bahnschrift", 8), bd=0, highlightthickness=0,
-            relief="flat", padx=4, pady=2, height=1, width=1,
-            yscrollcommand=scroll.set, cursor="arrow",
-            spacing2=3, spacing3=4)
-        self.changelog_text.pack(side="left", fill="both", expand=True)
-        scroll.configure(command=self.changelog_text.yview)
-        for line in notes or ["No local changelog entries were found."]:
-            self.changelog_text.insert("end", "•  " + str(line) + "\n\n")
-        self.changelog_text.configure(state="disabled")
+        self.settings_panel.pack(side="top", fill="both", expand=True)
+        self.settings_panel.pack_propagate(False)
+        self._settings_card(self.settings_panel)
 
     def _load_launcher_settings(self):
         default_path = services.DEFAULT_GAME_PATH
@@ -3237,17 +3193,77 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
 
     def _hub_install_state(self, mod):
-        if self._is_local_community_mod(mod):
-            return ("LOCAL", False)
-        version = self._local_record_version(mod)
-        if version:
-            if self._version_key(mod.get("version")) > self._version_key(version):
-                return ("UPDATE", bool(mod.get("download_url") and mod.get("sha256")))
+        local = mod.get("_installed")
+        source = str(mod.get("source", ""))
+        pkg = str(mod.get("package_path", ""))
+        if local:
+            installed_version = (str(local.get("version") or "")
+                                 or self._local_record_version(mod))
+            downloadable = (
+                (source == "local" and pkg.lower().endswith(".zip")
+                 and os.path.isfile(pkg) and bool(mod.get("sha256"))) or
+                (source == "online" and bool(mod.get("download_url") and
+                                             mod.get("sha256"))))
+            if (downloadable and self._version_key(mod.get("version")) >
+                    self._version_key(installed_version)):
+                return ("UPDATE", True)
             return ("INSTALLED", False)
+        if source == "installed":
+            return ("NO PACKAGE", False)
+        if source == "local":
+            return ("INSTALL ZIP", bool(pkg.lower().endswith(".zip") and
+                                        os.path.isfile(pkg) and mod.get("sha256")))
         if not mod.get("download_url") or not mod.get("sha256"):
             return ("NO PACKAGE", False)
         return ("INSTALL", True)
 
+    def _toggle_hide_local_mods(self):
+        """Hide unpublished local ZIPs/folders in the browser, without deleting."""
+        active = self.hub_hide_local_var.get()
+        self.hub_hide_local_button.configure(
+            text="HIDE LOCAL  ON" if active else "HIDE LOCAL",
+            bg="#4A1C06" if active else "#15191E",
+            fg="#FFFFFF" if active else "#A9ADB2",
+        )
+        self._render_hub_cards()
+
+    def _toggle_installed_only(self):
+        active = self.hub_installed_only_var.get()
+        self.hub_installed_button.configure(
+            text="INSTALLED ONLY  ✓" if active else "INSTALLED ONLY",
+            bg="#4A1C06" if active else "#15191E",
+            fg="#FFFFFF" if active else "#A9ADB2",
+            highlightbackground=COLORS["orange"] if active else "#343A42",
+        )
+        self._render_hub_cards()
+
+    def _toggle_installed_mod(self, mod):
+        """Write the game's REAL native enabled INI, not a launcher-only flag."""
+        if getattr(self, "mod_download_busy", False) or getattr(self, "game_update_busy", False):
+            self.hub_status_label.configure(
+                text="Wait for the current game/mod installation to finish.")
+            return
+        current = mod.get("_installed") or {}
+        if not current.get("manageable"):
+            self.hub_status_label.configure(
+                text="This mod needs a valid native INI before it can be managed.")
+            return
+        try:
+            changed = mod_manager.set_enabled(
+                self.game_install_path, current["type"], current["id"],
+                not current["enabled"])
+        except (mod_manager.ModManagerError, OSError) as error:
+            self.hub_status_label.configure(text="Mod Manager: " + str(error)[:150])
+            return
+        self._close_mod_details()
+        self._render_hub_cards()
+        message = "ENABLED" if changed["enabled"] else "DISABLED"
+        if changed["type"] == "Track":
+            message += " (track registration in the game is still pending)"
+        else:
+            message += " — restart the game to apply"
+        self.hub_status_label.configure(
+            text=current["title"] + " " + message + ".")
     def _build_forge_hub_overlay(self):
         self.hub_overlay = tk.Frame(
             self.shell,
@@ -3267,7 +3283,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         title_box.pack(side="left", pady=12)
         tk.Label(
             title_box,
-            text="FORGE HUB",
+            text="FORGE HUB  /  MOD MANAGER",
             bg="#0D0F13",
             fg="#F2F2EF",
             font=("Bahnschrift SemiBold", 18),
@@ -3414,6 +3430,52 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             )
         sort_button.configure(menu=menu)
         sort_button.pack(side="left")
+
+        # Installed is an independent filter, so e.g. WHEELS + INSTALLED
+        # works together without crowding the 4:3 category filter row.
+        manager_row = tk.Frame(controls, bg="#101318")
+        manager_row.pack(fill="x", pady=(4, 5))
+        self.hub_installed_only_var = tk.BooleanVar(value=False)
+        self.hub_installed_button = tk.Checkbutton(
+            manager_row, text="INSTALLED ONLY",
+            variable=self.hub_installed_only_var,
+            command=self._toggle_installed_only,
+            indicatoron=False,
+            bg="#15191E", fg="#A9ADB2",
+            activebackground="#4A1C06", activeforeground="#FFFFFF",
+            selectcolor="#4A1C06",
+            highlightbackground="#343A42", highlightthickness=1,
+            relief="flat", bd=0,
+            font=("Bahnschrift SemiBold", 8), padx=11, pady=5,
+            cursor="hand2",
+        )
+        self.hub_installed_button.pack(side="left", padx=(0, 7))
+        self.hub_hide_local_var = tk.BooleanVar(value=False)
+        self.hub_hide_local_button = tk.Checkbutton(
+            manager_row, text="HIDE LOCAL",
+            variable=self.hub_hide_local_var,
+            command=self._toggle_hide_local_mods,
+            indicatoron=False,
+            bg="#15191E", fg="#A9ADB2",
+            activebackground="#4A1C06", activeforeground="#FFFFFF",
+            selectcolor="#4A1C06",
+            highlightbackground="#343A42", highlightthickness=1,
+            relief="flat", bd=0, font=("Bahnschrift SemiBold", 8),
+            padx=9, pady=5, cursor="hand2",
+        )
+        self.hub_hide_local_button.pack(side="left", padx=(0, 8))
+        self.hub_installed_summary = tk.Label(
+            manager_row,
+            text="MOD MANAGER  /  SCANNING NATIVE FOLDERS",
+            bg="#101318", fg="#9198A1",
+            font=("Bahnschrift SemiBold", 8),
+        )
+        self.hub_installed_summary.pack(side="left")
+        music_filter = self._hub_button(
+            manager_row, "MUSIC", lambda: self._set_hub_type("Music"),
+            width=6
+        )
+        music_filter.pack(side="right")
 
         info = tk.Frame(self.hub_overlay, bg="#090B0E")
         info.pack(fill="x", padx=20, pady=(2, 7))
@@ -3600,33 +3662,64 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._hub_resize_job = self.after(80, self._render_hub_cards)
 
     def _hub_filtered_catalog(self):
-        data = list(getattr(self, "remote_mods", [])) + list(self._load_community_catalog())
-        query = self.hub_search_var.get().strip().lower()
-        mod_type = self.hub_type_var.get()
+        # Physical native folders are authoritative: the launcher can be
+        # reinstalled without forgetting any enabled or disabled game mods.
+        installed = mod_manager.scan_installed(self.game_install_path)
+        by_key = {(row["type"], row["id"]): row for row in installed}
+        self._hub_local_index = by_key
+        if hasattr(self, "hub_installed_summary"):
+            enabled = sum(row["enabled"] is True for row in installed)
+            disabled = sum(row["enabled"] is False for row in installed)
+            needs_ini = sum(not row["manageable"] for row in installed)
+            self.hub_installed_summary.configure(
+                text=f"{len(installed)} INSTALLED  /  {enabled} ON  /  "
+                     f"{disabled} OFF  /  {needs_ini} NEED INI")
 
+        catalog = list(getattr(self, "remote_mods", [])) + list(
+            self._load_community_catalog())
+        joined = {}
+        # Local items keep their own known title/version while catalog data
+        # supplies download URLs and public metadata for online items.
+        for item in catalog:
+            key = (str(item.get("type","")),str(item.get("id","")))
+            if key[0] not in mod_manager.CATEGORIES or not key[1]:
+                continue
+            if key not in joined or item.get("source") == "online":
+                joined[key] = dict(item)
+        for key, entry in by_key.items():
+            if key not in joined:
+                joined[key] = dict(entry)
+            joined[key]["_installed"] = entry
+        data = list(joined.values())
+        if (getattr(self, "hub_hide_local_var", None)
+                and self.hub_hide_local_var.get()):
+            data = [mod for mod in data if not mod_manager.locally_sourced(mod)]
+        if getattr(self, "hub_installed_only_var", None) and self.hub_installed_only_var.get():
+            data = [item for item in data if item.get("_installed")]
+
+        query = self.hub_search_var.get().strip().lower()
         if query:
             data = [
                 item for item in data
                 if query in str(item.get("title", "")).lower()
+                or query in str(item.get("id", "")).lower()
                 or query in str(item.get("author", "")).lower()
                 or query in str(item.get("description", "")).lower()
                 or query in str(item.get("type", "")).lower()
                 or query in modmeta.summary(item).lower()
             ]
-
+        mod_type = self.hub_type_var.get()
         if mod_type != "All":
             data = [item for item in data if item.get("type") == mod_type]
-
         sort_mode = self.hub_sort_var.get()
         if sort_mode == "Most Downloaded":
             data.sort(key=lambda x: int(x.get("downloads") or 0), reverse=True)
         elif sort_mode == "Most Liked":
             data.sort(key=lambda x: int(x.get("likes") or 0), reverse=True)
         elif sort_mode == "Name":
-            data.sort(key=lambda x: str(x.get("title", "")).lower())
+            data.sort(key=lambda x: str(x.get("title","")).lower())
         else:
-            data.sort(key=lambda x: str(x.get("created_at", "")), reverse=True)
-
+            data.sort(key=lambda x: str(x.get("created_at","")),reverse=True)
         return data
 
     def _render_hub_cards(self):
@@ -3672,7 +3765,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             ).pack(pady=(34, 5))
             tk.Label(
                 empty,
-                text="Try another search or category.",
+                text="Try another search, category, or local/installed filter.",
                 bg="#101318",
                 fg="#727880",
                 font=("Bahnschrift", 9),
@@ -3720,7 +3813,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         title_row.pack(fill="x")
         tk.Label(
             title_row,
-            text=str(mod.get("title", "Untitled")),
+            text=mod_manager.display_mod_name(mod),
             bg="#101318",
             fg="#F0F0EC",
             font=("Bahnschrift SemiBold", max(10, int(round(12 * s)))),
@@ -3788,23 +3881,39 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             font=("Bahnschrift", 7),
         ).pack(side="right")
 
+        installed = mod.get("_installed")
+        if installed:
+            state = ("STAGED" if installed["type"] == "Track" else
+                     installed.get("status", "INSTALLED"))
+            tk.Label(
+                body, text="●  " + state,
+                bg="#101318",
+                fg="#59C98F" if installed.get("enabled") else "#ECA47D",
+                font=("Bahnschrift SemiBold", 8),
+                anchor="w",
+            ).pack(fill="x", pady=(0, 6))
         buttons = tk.Frame(body, bg="#101318")
         buttons.pack(fill="x")
 
         install_text, install_enabled = self._hub_install_state(mod)
-        if not self._is_local_community_mod(mod):
+        if install_enabled or not installed:
             self._hub_button(
                 buttons,
                 install_text,
                 lambda m=mod: self._install_community_mod(m),
-                accent=install_enabled,
-                enabled=install_enabled,
-            ).pack(side="left")
-
+                accent=install_enabled, enabled=install_enabled,
+            ).pack(side="left", padx=(0, 5))
+        if installed:
+            self._hub_button(
+                buttons,
+                ("DISABLE" if installed["enabled"] else "ENABLE")
+                if installed["manageable"] else "NEEDS INI",
+                lambda m=mod: self._toggle_installed_mod(m),
+                accent=bool(installed["manageable"] and not installed["enabled"]),
+                enabled=bool(installed["manageable"]),
+            ).pack(side="left", padx=(0, 4))
         self._hub_button(
-            buttons,
-            "DETAILS",
-            lambda m=mod: self._show_mod_details(m),
+            buttons, "DETAILS", lambda m=mod: self._show_mod_details(m),
         ).pack(side="right")
 
         return card
@@ -3979,9 +4088,11 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             except Exception:
                 pass
 
-        local = self._is_local_community_mod(mod)
+        installed = mod.get("_installed")
+        local = self._is_local_community_mod(mod) or bool(installed)
         package = str(mod.get("package_path", "")).strip()
-        source_text = "LOCAL MOD" if local else "COMMUNITY MOD"
+        source_text = "INSTALLED MODULE" if installed else (
+            "LOCAL ZIP" if local else "COMMUNITY MOD")
 
         overlay = tk.Frame(
             self.hub_overlay,
@@ -4017,7 +4128,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         tk.Label(
             title_row,
-            text=str(mod.get("title", "Untitled")),
+            text=mod_manager.display_mod_name(mod),
             bg="#101318",
             fg="#FFFFFF",
             font=("Bahnschrift SemiBold", 20),
@@ -4064,13 +4175,27 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             ("TYPE", str(mod.get("type", "Mod"))),
             ("VERSION", str(mod.get("version", "1.0"))),
             ("AUTHOR", str(mod.get("author", "Unknown"))),
-            ("STATUS", "LOCAL / ALREADY ON THIS PC" if local else "ONLINE CATALOG"),
+            ("STATUS", installed.get("status", "INSTALLED") if installed
+             else "LOCAL ZIP" if local else "ONLINE CATALOG"),
+            ("MOD ID", str(mod.get("id", ""))),
+            ("WEB ID", str(installed.get("source_id") or
+                          mod.get("public_id") or mod.get("id", ""))
+             if (installed and installed.get("origin") == "forge_hub")
+             or mod.get("source") == "online" else "LOCAL / UNPUBLISHED"),
             ("DOWNLOADS", f"{mod['downloads']:,}" if mod.get("downloads") is not None else "Unreported"),
             ("LIKES", f"{mod['likes']:,}" if mod.get("likes") is not None else "Unreported"),
         ]
         rows.insert(1, ("CLASS / DESIGN", modmeta.summary(mod)))
         if package:
             rows.append(("PACKAGE", package))
+        if installed:
+            rows.append(("FOLDER", str(installed.get("path", ""))))
+            rows.append(("NATIVE INI", "enabled = " +
+                         ("true" if installed.get("enabled") else "false")
+                         if installed["manageable"] else
+                         "MISSING / INVALID"))
+            if installed["type"] == "Track":
+                rows.append(("TRACK", "Staged only; game registration pending"))
 
         for label_text, value_text in rows:
             row = tk.Frame(info, bg="#0C0F13")
@@ -4098,10 +4223,28 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         footer = tk.Frame(body, bg="#101318")
         footer.pack(fill="x", pady=(16, 0))
 
-        if package and os.path.exists(package):
+        if installed:
+            self._hub_button(
+                footer,
+                ("DISABLE MOD" if installed["enabled"] else "ENABLE MOD")
+                if installed["manageable"] else "NEEDS NATIVE INI",
+                lambda m=mod: self._toggle_installed_mod(m),
+                accent=bool(installed["manageable"] and not installed["enabled"]),
+                enabled=bool(installed["manageable"]),
+            ).pack(side="left", padx=(0, 7))
+        install_text, install_enabled = self._hub_install_state(mod)
+        if install_enabled:
+            self._hub_button(
+                footer, install_text, lambda m=mod: self._install_community_mod(m),
+                accent=True,
+            ).pack(side="left", padx=(0, 8))
+
+        if (package and os.path.exists(package)) or installed:
             def open_package_location():
                 try:
-                    target = package if os.path.isdir(package) else os.path.dirname(package)
+                    target = (installed["path"] if installed else
+                              package if os.path.isdir(package)
+                              else os.path.dirname(package))
                     if target and os.path.isdir(target):
                         os.startfile(target)
                 except Exception:
@@ -4419,7 +4562,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         path = filedialog.askopenfilename(
             title="Select Crash Forge mod package",
             filetypes=(
-                ("Mod packages", "*.zip *.7z *.rar"),
+                ("Crash Forge mod ZIP", "*.zip"),
                 ("All files", "*.*"),
             ),
         )
@@ -4443,8 +4586,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         if mod_type not in modmeta.MOD_TYPES:
             self.upload_status_label.configure(text="Choose a valid mod type.")
             return
-        if not package or not os.path.exists(package):
-            self.upload_status_label.configure(text="Choose an existing package file.")
+        if not package or not os.path.isfile(package) or not package.lower().endswith(".zip"):
+            self.upload_status_label.configure(text="Choose a local .zip file.")
+            return
+        try:
+            identity = mod_manager.inspect_local_zip(package, mod_type)
+            if os.path.getsize(package) > services.MAX_MOD_BYTES:
+                raise mod_manager.ModManagerError("ZIP is too large")
+            import hashlib
+            digest = hashlib.sha256()
+            with open(package, "rb") as stream:
+                for chunk in iter(lambda: stream.read(262144), b""):
+                    digest.update(chunk)
+        except (mod_manager.ModManagerError, OSError) as error:
+            self.upload_status_label.configure(text="Invalid mod ZIP: " + str(error)[:150])
             return
 
         raw_metadata = {}
@@ -4466,9 +4621,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         catalog = self._load_community_catalog()
         now = datetime.now()
-        safe_id = "".join(ch.lower() if ch.isalnum() else "_" for ch in title).strip("_")
         mod = {
-            "id": f"{safe_id}_{now.strftime('%Y%m%d%H%M%S')}",
+            "id": identity["id"],
             "title": title,
             "author": author,
             "type": mod_type,
@@ -4478,9 +4632,16 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             "created_at": now.isoformat(timespec="seconds"),
             "description": description or f"{mod_type} mod for Crash Forge: Racing.",
             "package_path": package,
+            "sha256": digest.hexdigest(),
             "source": "local",
         }
         mod.update(metadata)
+        # One stable ID per native category, not an endlessly duplicated
+        # timestamp ID every time the same local ZIP is added.
+        catalog[:] = [
+            old for old in catalog
+            if (old.get("type"), old.get("id")) != (mod_type, mod["id"])
+        ]
         catalog.append(mod)
 
         if not self._save_community_catalog():

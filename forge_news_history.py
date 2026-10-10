@@ -15,9 +15,11 @@ GITHUB_RELEASES = "https://github.com/" + REPOSITORY + "/releases"
 _VERSION = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 _IMAGES = {"0.3.37": "forge-news-v0.3.37.webp",
-           "0.3.38": "forge-news-v0.3.38.webp"}
+           "0.3.38": "forge-news-v0.3.38.webp",
+           "0.3.39": "forge-news-v0.3.39.webp"}
 _TITLES = {"0.3.37": "Forge Hub Website Is Live",
-           "0.3.38": "Model Importer v1.8 — Redesigned"}
+           "0.3.38": "Model Importer v1.8 — Redesigned",
+           "0.3.39": "Forge Hub Mod Manager"}
 
 
 def valid_version(v):
