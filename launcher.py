@@ -1757,8 +1757,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         make_tool_card(
             2,
             "MODEL IMPORTER",
-            "RACERS / KARTS / TRACKS",
-            "Import racer models, kart colors, and CTR native LEV/VRM tracks.",
+            "CHARACTERS / KARTS / TRACKS",
+            "Import characters, customize karts and package native .LEV/.VRM tracks.",
             action=(lambda: self._launch_editor_tool(model_tool)),
             disabled=not os.path.isfile(model_tool),
         )

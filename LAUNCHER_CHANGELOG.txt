@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.34
+- Display CHARACTERS / KARTS / TRACKS on the Model Importer tile in the launcher editor.
+- Clarify native LEV/VRM track package support in the tile description.
+- Keep the importer and launcher updater unchanged otherwise.
+
 v0.3.33
 - Model Importer v1.7: stage CTR-native LEV + VRM track packages in mods/tracks with their own track.ini.
 - Reject OBJ/MTL tracks, preserve file checksums and retain previous package backups.
