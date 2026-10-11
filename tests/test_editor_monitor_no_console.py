@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from forge_editor_geometry import (
     ENV_NAME, initial_geometry, parse_workarea, select_window_geometry,
-    workarea_to_env,
+    workarea_to_env, tk_absolute_position, tk_absolute_geometry,
 )
 from forge_editor_registry import editor_executable, EDITORS
 
@@ -27,12 +27,26 @@ class EditorMonitorAndConsoleTests(unittest.TestCase):
     def test_workarea_handles_secondary_monitor_left_negative_x(self):
         env={ENV_NAME:"-2560,-200,0,1240"}
         self.assertEqual(initial_geometry(1200,800,environment=env),
-                         "1200x800-1880+120")
+                         "1200x800+-1880+120")
         self.assertEqual(initial_geometry(1060,800,environment=env),
-                         "1060x800-1810+120")
+                         "1060x800+-1810+120")
         self.assertEqual(select_window_geometry(
             900, 520, (-2000, 0, 1200, 720), (-2560,-200,0,1240)),
-            "900x520-1850+100")
+            "900x520+-1850+100")
+
+    def test_tk_true_negative_coordinates_do_not_use_screen_edge_gravity(self):
+        self.assertEqual(tk_absolute_position(-600,-100), "+-600+-100")
+        self.assertEqual(tk_absolute_geometry(800,600,-600,-100),
+                         "800x600+-600+-100")
+        self.assertEqual(initial_geometry(
+            900,600,workarea="-2600,-1400,0,0"),
+            "900x600+-1750+-1000")
+        code=(ROOT/"launcher.py").read_text(encoding="utf-8")
+        for method in ("_show_editor_selector", "_account_badge_reposition_popup",
+                       "_toggle_maximize", "_drag_move"):
+            self.assertIn("def "+method,code)
+        self.assertIn("editor_geometry.tk_absolute_position(px, py)",code)
+        self.assertIn("editor_geometry.tk_absolute_geometry(",code)
 
     def test_safe_clamp_to_workarea_when_editor_exceeds_monitor(self):
         self.assertEqual(initial_geometry(1200,800,

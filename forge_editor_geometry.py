@@ -33,6 +33,20 @@ def workarea_to_env(area):
     result = f"{left},{top},{left+width},{top+height}"
     return result if parse_workarea(result) else None
 
+def tk_absolute_position(x, y):
+    """Tk absolute VIRTUAL desktop coords, not right/bottom-edge offsets.
+
+    Tk interprets "-400" as a distance from the RIGHT edge of the screen,
+    which moves popups from left-of-primary monitors to the wrong display.
+    "+-400" means the genuine absolute coordinate -400 instead.
+    """
+    return f"+{int(x)}+{int(y)}"
+
+
+def tk_absolute_geometry(width, height, x, y):
+    return f"{int(width)}x{int(height)}{tk_absolute_position(x, y)}"
+
+
 def initial_geometry(width, height, *, workarea=None, environment=None):
     """Return signed Tk geometry centered on designated monitor, else None."""
     env = environment if environment is not None else os.environ
@@ -46,7 +60,7 @@ def initial_geometry(width, height, *, workarea=None, environment=None):
         return None
     x = left + (right - left - w) // 2
     y = top + (bottom - top - h) // 2
-    return f"{w}x{h}{x:+d}{y:+d}"
+    return tk_absolute_geometry(w, h, x, y)
 
 def select_window_geometry(window_width, window_height, parent_rect, monitor_area):
     """Pick launcher-linked Toplevel position without moving to primary screen."""
@@ -56,4 +70,4 @@ def select_window_geometry(window_width, window_height, parent_rect, monitor_are
     h = min(int(window_height), max(1, bottom - top))
     x = min(max(px + (pw - w) // 2, left), right - w)
     y = min(max(py + (ph - h) // 2, top), bottom - h)
-    return f"{w}x{h}{x:+d}{y:+d}"
+    return tk_absolute_geometry(w, h, x, y)

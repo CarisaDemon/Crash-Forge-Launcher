@@ -656,7 +656,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         height = min(BASE_HEIGHT, safe_h)
         x = left + max(0, (available_w - width) // 2)
         y = top + max(0, (available_h - height) // 2)
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.geometry(editor_geometry.tk_absolute_geometry(width, height, x, y))
 
     def _on_root_configure(self, event):
         if event.widget is not self:
@@ -1063,7 +1063,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 left + work_w - w)
         y = min(max(top, self.winfo_rooty() + (self.winfo_height() - h) // 2),
                 top + work_h - h)
-        win.geometry(f"{w}x{h}+{x}+{y}")
+        win.geometry(editor_geometry.tk_absolute_geometry(w, h, x, y))
         win.transient(self)
 
         topbar = tk.Frame(win, bg="#171A20", height=50)
@@ -1546,7 +1546,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             height = max(65, popup.winfo_height())
             x, y = self._account_badge_popup_xy(width, height)
             if (popup.winfo_rootx(), popup.winfo_rooty()) != (x, y):
-                popup.geometry(f"{width}x{height}{x:+d}{y:+d}")
+                popup.geometry(editor_geometry.tk_absolute_geometry(width, height, x, y))
         except tk.TclError:
             self._account_popup = None
 
@@ -1584,7 +1584,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         popup.configure(bg=COLORS["orange"])
         popup.resizable(False, False)
         popup.transient(self)
-        popup.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        popup.geometry(editor_geometry.tk_absolute_geometry(width, height, x, y))
 
         # This border is entirely drawn with Tk widgets; no Windows-native
         # popup menu outline, so the white system border cannot come back.
@@ -1617,7 +1617,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         real_height = max(height, popup.winfo_reqheight())
         if real_height != height:
             x, y = self._account_badge_popup_xy(width, real_height)
-            popup.geometry(f"{width}x{real_height}{x:+d}{y:+d}")
+            popup.geometry(editor_geometry.tk_absolute_geometry(width, real_height, x, y))
         popup.bind("<Escape>", self._close_account_badge_menu)
         popup.bind("<FocusOut>", self._account_badge_focus_out)
         popup.deiconify()
@@ -1905,7 +1905,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         else:
             x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
             y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
-            win.geometry(f"{width}x{height}{x:+d}{y:+d}")
+            win.geometry(editor_geometry.tk_absolute_geometry(width, height, x, y))
 
         canvas = tk.Canvas(
             win,
@@ -2320,17 +2320,13 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         workarea = self._current_monitor_workarea()
         if workarea is not None:
             x, y, width, height = workarea
-            x_part = f"+{x}" if x >= 0 else str(x)
-            y_part = f"+{y}" if y >= 0 else str(y)
-            self.geometry(f"{width}x{height}{x_part}{y_part}")
+            self.geometry(editor_geometry.tk_absolute_geometry(width, height, x, y))
         else:
             # Very old Windows builds or temporary display API failures:
             # fit around the current window instead of jumping to (0,0).
             x, y = self.winfo_rootx(), self.winfo_rooty()
-            self.geometry(
-                f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}"
-                f"{x:+d}{y:+d}"
-            )
+            self.geometry(editor_geometry.tk_absolute_geometry(
+                self.winfo_screenwidth(), self.winfo_screenheight(), x, y))
 
         self._is_maximized = True
         self._raise_resize_grips()
@@ -2348,7 +2344,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             return
         px = int(event.x_root - self._drag_x)
         py = int(event.y_root - self._drag_y)
-        self.geometry(f"{px:+d}{py:+d}")
+        self.geometry(editor_geometry.tk_absolute_position(px, py))
 
     def _build_resize_grips(self):
         # Tk's borderless override removes native Windows resizing. Eight
@@ -2433,9 +2429,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             if "n" in edge:
                 top -= (minimum_h - height)
             height = minimum_h
-        x = f"+{left}" if left >= 0 else str(left)
-        y = f"+{top}" if top >= 0 else str(top)
-        self.geometry(f"{width}x{height}{x}{y}")
+        self.geometry(editor_geometry.tk_absolute_geometry(
+            width, height, left, top))
 
     def _finish_resize(self, event=None):
         self._resize_origin = None
