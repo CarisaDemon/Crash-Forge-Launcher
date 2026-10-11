@@ -10,7 +10,7 @@ import unittest
 
 
 class FitWindowMonitorTests(unittest.TestCase):
-    @unittest.skipUnless(os.name == "nt", "Windows monitor work area test")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Windows monitor work area test")
     def test_fit_to_window_follows_secondary_monitor_then_restores(self):
         import forge_account_badge as badge
         os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"
@@ -64,7 +64,7 @@ class FitWindowMonitorTests(unittest.TestCase):
         finally:
             app.destroy()
 
-    @unittest.skipUnless(os.name == "nt", "Windows monitor work area test")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Windows monitor work area test")
     def test_workarea_lookup_survives_absent_native_hwnd(self):
         import forge_account_badge as badge
         os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"

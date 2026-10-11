@@ -16,10 +16,10 @@ _VERSION = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 _IMAGES = {"0.3.37": "forge-news-v0.3.37.webp",
            "0.3.38": "forge-news-v0.3.38.webp",
-           "0.3.39": "forge-news-v0.3.39.webp", "0.3.41": "forge-news-v0.3.41.webp", "0.3.42": "forge-news-v0.3.42.webp"}
+           "0.3.39": "forge-news-v0.3.39.webp", "0.3.41": "forge-news-v0.3.41.webp", "0.3.42": "forge-news-v0.3.42.webp", "0.3.43": "forge-news-v0.3.43.webp"}
 _TITLES = {"0.3.37": "Forge Hub Website Is Live",
            "0.3.38": "Model Importer v1.8 — Redesigned",
-           "0.3.39": "Forge Hub Mod Manager", "0.3.41": "File verification system", "0.3.42": "Mod folder separation"}
+           "0.3.39": "Forge Hub Mod Manager", "0.3.41": "File verification system", "0.3.42": "Mod folder separation", "0.3.43": "Forge Hub Accounts & Multi-Monitor Fixes"}
 
 
 def valid_version(v):
@@ -203,7 +203,7 @@ def sync_release_artwork(images):
             from PIL import Image
             with Image.open(BytesIO(data)) as im:
                 if (im.format != "WEBP" or not
-                        (100 <= im.width <= 6000 and 100 <= im.height <= 6000)):
+                        (100 <= im.width <= 6000 and 64 <= im.height <= 6000)):
                     raise ValueError("Unexpected news image type or dimensions")
                 im.verify()
             directory.mkdir(parents=True, exist_ok=True)

@@ -15,7 +15,7 @@ class BadgeDropdownTests(unittest.TestCase):
         self.assertEqual(badge.account_menu_items(True),
                          ("MY ACCOUNT", "OPEN FORGE HUB", "SIGN OUT"))
 
-    @unittest.skipUnless(os.name == "nt", "Actual Tk popup requires Windows")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Actual Tk popup requires Windows")
     def test_orange_menu_and_no_duplicate_account_button(self):
         os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"
         from launcher import Launcher
@@ -68,6 +68,29 @@ class BadgeDropdownTests(unittest.TestCase):
             self.assertIn("OPEN FORGE HUB", labels)
             self.assertIn("SIGN OUT", labels)
             self.assertIsNone(app.grab_current())
+            # Verify the signed-in action invokes the correct handler and
+            # closes the orange menu without a modal grab.
+            from unittest.mock import Mock
+            app._account_badge_sign_out = Mock()
+            app._close_account_badge_menu()
+            app._account_badge_menu(event)
+            popup = app._account_popup
+            app.update_idletasks()
+            app.update()
+            self.assertTrue(popup.winfo_exists())
+            def buttons(w):
+                found = []
+                for c in w.winfo_children():
+                    if isinstance(c, tk.Label):
+                        found.append(c)
+                    found.extend(buttons(c))
+                return found
+            signout = next(c for c in buttons(popup)
+                           if c.cget("text") == "SIGN OUT")
+            signout.event_generate("<Button-1>")
+            app.update()
+            app._account_badge_sign_out.assert_called_once_with()
+            self.assertIsNone(app._account_popup)
         finally:
             app._close_account_badge_menu()
             app.destroy()

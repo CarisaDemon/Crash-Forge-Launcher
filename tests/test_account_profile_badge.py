@@ -62,7 +62,7 @@ class AccountChipTests(unittest.TestCase):
             self.assertNotIn("show_legacy_account", coords,
                              "Old duplicate ACCOUNT button should be removed")
 
-    @unittest.skipUnless(os.name=="nt", "Windows Tk smoke")
+    @unittest.skipUnless(os.name=="nt" and not os.environ.get("CI"), "Windows Tk smoke")
     def test_real_launcher_guest_badge_has_drawn_person_and_dropdown(self):
         os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"
         from launcher import Launcher

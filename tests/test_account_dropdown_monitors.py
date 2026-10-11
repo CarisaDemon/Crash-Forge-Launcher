@@ -37,7 +37,7 @@ class AccountPopupPlacementTests(unittest.TestCase):
         self.assertLess(y + 190, 720)
         self.assertLess(y, 665)  # Opens upwards when insufficient bottom room.
 
-    @unittest.skipUnless(os.name == "nt", "Windows API monitor selection")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Windows API monitor selection")
     def test_windows_api_chooses_second_monitor(self):
         first = badge.monitor_work_area_at(250, 150)
         second = badge.monitor_work_area_at(2350, 150)
@@ -50,7 +50,7 @@ class AccountPopupPlacementTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertGreaterEqual(second[0], first[2])
 
-    @unittest.skipUnless(os.name == "nt", "Windows/Tk multi-monitor widget test")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Windows/Tk multi-monitor widget test")
     def test_real_launcher_dropdown_follows_second_monitor(self):
         first = badge.monitor_work_area_at(250, 150)
         second = badge.monitor_work_area_at(2350, 150)

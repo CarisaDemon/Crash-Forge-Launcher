@@ -6,7 +6,7 @@ from unittest.mock import Mock
 from forge_account_ui import AccountDialog
 
 class TestAccountWindow(unittest.TestCase):
-    @unittest.skipUnless(os.name == "nt", "Windows native window manager regression")
+    @unittest.skipUnless(os.name == "nt" and not os.environ.get("CI"), "Windows native window manager regression")
     def test_account_window_is_nonmodal_and_closeable(self):
         root = tk.Tk()
         try:

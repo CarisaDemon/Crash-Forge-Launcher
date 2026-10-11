@@ -35,7 +35,7 @@ class HeaderForgeHubTests(unittest.TestCase):
         self.assertIn('action=(lambda: self._launch_editor_tool(model_tool))',SOURCE)
 
     def test_release_tag(self):
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(),"0.3.42")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(),"0.3.43")
 
 
 if __name__=="__main__":

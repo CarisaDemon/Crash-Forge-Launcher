@@ -32,8 +32,8 @@ class NewsHistoryTests(unittest.TestCase):
     def test_existing_ten_publications_are_preserved_offline(self):
         articles = history.local_publications(ROOT)
         versions = [item["version"] for item in articles]
-        self.assertEqual(len(articles), 13)
-        self.assertEqual(versions[:3], ["0.3.42", "0.3.41", "0.3.39"])
+        self.assertEqual(len(articles), 14)
+        self.assertEqual(versions[:3], ["0.3.43", "0.3.42", "0.3.41"])
         self.assertIn("0.3.28", versions)
         self.assertEqual(len(versions), len(set(versions)))
         self.assertTrue(all(item["url"].startswith(history.GITHUB_RELEASES)
@@ -48,14 +48,14 @@ class NewsHistoryTests(unittest.TestCase):
              "notes": ["Future changes"]},
         ]
         merged = history.save_history(patch, ROOT)
-        self.assertEqual(len(merged), 14)
-        self.assertEqual(merged[0]["version"], "0.3.42")
+        self.assertEqual(len(merged), 15)
+        self.assertEqual(merged[0]["version"], "0.3.43")
         self.assertEqual([x["version"] for x in merged].count("0.3.38"), 1)
-        self.assertEqual(merged[4]["notes"], ["Updated Model Importer announcement"])
+        self.assertEqual(merged[5]["notes"], ["Updated Model Importer announcement"])
         self.assertIn("0.3.28", [i["version"] for i in merged])
         again = history.save_history(patch, ROOT)
         self.assertEqual(merged, again)
-        self.assertEqual(len(history.local_publications(ROOT)), 14)
+        self.assertEqual(len(history.local_publications(ROOT)), 15)
 
     def test_release_urls_cannot_be_redirected_by_cache_content(self):
         fake = [{"version": "0.3.37",
@@ -110,6 +110,21 @@ class NewsHistoryTests(unittest.TestCase):
             [dict(item, browser_download_url="https://unsafe.invalid/pic")],
             "0.3.37"))
 
+    def test_guest_screenshot_image_is_trusted_with_verified_hash(self):
+        img = ROOT / "assets" / "news" / "forge-news-v0.3.43.webp"
+        from PIL import Image
+        with Image.open(img) as image:
+            self.assertEqual(image.format, "WEBP")
+            self.assertEqual(image.size, (229, 91))
+        digest = hashlib.sha256(img.read_bytes()).hexdigest()
+        item = {"name": img.name, "size": img.stat().st_size,
+                "browser_download_url": history.release_url("0.3.43").replace(
+                    "/tag/", "/download/") + "/" + img.name,
+                "digest": "sha256:" + digest}
+        valid = history.trusted_image_asset([item], "0.3.43")
+        self.assertIsNotNone(valid)
+        self.assertIsNone(history.trusted_image_asset([item], "0.3.42"))
+
     def test_downloaded_artwork_has_correct_signature_and_hash(self):
         buffer = BytesIO()
         Image.new("RGB", (360, 160), "orange").save(buffer, "WEBP")
@@ -145,17 +160,18 @@ class NewsHistoryTests(unittest.TestCase):
         self.assertIn("is_featured = (index < 2 or", ui)
         workflow = (ROOT / ".github" / "workflows" / "windows-release.yml").read_text(
             encoding="utf-8")
-        self.assertIn('gh release upload ("v" + $version) $file --clobber', workflow)
-        self.assertIn('foreach ($version in @("0.3.37", "0.3.38", "0.3.39", "0.3.41", "0.3.42"))', workflow)
+        self.assertIn('gh release upload $tag $file --clobber', workflow)
+        self.assertIn('$version = (Get-Content launcher_version.txt -Raw).Trim()', workflow)
+        self.assertNotIn('foreach ($version in @("0.3.37",', workflow)
         self.assertNotIn('image_path = os.path.join(BASE_DIR, "assets", "news",',
                          hero)
 
     def test_image_update_does_not_create_a_new_version(self):
         old = history.local_publications(ROOT)
-        self.assertEqual(old[0]["version"], "0.3.42")
+        self.assertEqual(old[0]["version"], "0.3.43")
         self.assertTrue(history.release_url("v0.3.38").endswith("/tag/v0.3.38"))
         self.assertTrue(history.release_url("v0.3.37").endswith("/tag/v0.3.37"))
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.42")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.43")
 
 
 if __name__ == "__main__":

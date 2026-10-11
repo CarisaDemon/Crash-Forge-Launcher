@@ -1,5 +1,17 @@
 Crash Forge: Racing Launcher
 
+v0.3.43
+- Forge Hub accounts: GitHub browser login, email or username/password and registration.
+- Connect existing accounts securely; manage account profile, linked providers and sign out.
+- Encrypted Windows sessions, trusted GitHub avatars and non-blocking account windows.
+- Right-side user profile widget with GitHub avatar, online/offline dot, and illustrated Guest person silhouette.
+- Contextual orange account menu: Guest displays LOG IN + OPEN FORGE HUB; signed-in users get MY ACCOUNT + OPEN FORGE HUB + SIGN OUT.
+- Removed the duplicate ACCOUNT header shortcut; account windows no longer block launcher input or close controls.
+- Fix account menu positioning on the correct monitor; keep it anchored when the launcher moves.
+- Fix Fit to Window / maximize when on monitor 2, with correct workarea, taskbar and original geometry restoration.
+- Preserve portable Windows distribution without Python/pip installation; expanded runtime, security and multi-monitor tests.
+- Game files and installed mods remain unchanged; no game binaries distributed with this launcher release.
+
 v0.3.42
 - New mods directory beside ctr-native.exe.
 - Dynamic custom track detection in OGG and CSEQ Toolkits.

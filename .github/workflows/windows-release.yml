@@ -89,8 +89,7 @@ jobs:
             build/release/Crash-Forge-Launcher-Windows.zip.sha256
 
 
-      - name: Attach news images to their exact release tags
-        # No new release versions: replace image assets on existing tags.
+      - name: Attach artwork to the current release only
         if: >-
           startsWith(github.ref, 'refs/tags/v') ||
           (github.ref == 'refs/heads/main' &&
@@ -99,38 +98,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          foreach ($version in @("0.3.37", "0.3.38", "0.3.39", "0.3.41", "0.3.42")) {
-            $file = Join-Path "assets/news" ("forge-news-v" + $version + ".webp")
-            if (Test-Path -LiteralPath $file) {
-              gh release upload ("v" + $version) $file --clobber --repo $env:GITHUB_REPOSITORY
-              if ($LASTEXITCODE -ne 0) {
-                throw "Could not replace existing-release artwork v$version"
-              }
-              # Put the illustration IN the existing release description;
-              # keep the previous changelog intact and never create a new tag.
-              $prior = gh release view ("v" + $version) --json body --jq ".body" --repo $env:GITHUB_REPOSITORY
-              if ($LASTEXITCODE -ne 0) {
-                throw "Could not read existing release notes v$version"
-              }
-              $body = $prior -join "`n"
-              $filename = Split-Path $file -Leaf
-              if (-not $body.Contains($filename)) {
-                $caption = switch ($version) { "0.3.37" { "Forge Hub Website" } "0.3.38" { "Model Importer v1.8" } default { "Forge Hub Mod Manager" } }
-                $art = "![Crash Forge " + $caption + "](https://github.com/" + $env:GITHUB_REPOSITORY + "/releases/download/v" + $version + "/" + $filename + ")"
-                $notes = Join-Path $env:RUNNER_TEMP ("cfr-existing-release-v" + $version + ".md")
-                [IO.File]::WriteAllText($notes, ($art + "`n`n" + $body), [Text.Encoding]::UTF8)
-                gh release edit ("v" + $version) --notes-file $notes --repo $env:GITHUB_REPOSITORY
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Could not update original release description v$version"
-                }
-              }
-            }
+          $version = (Get-Content launcher_version.txt -Raw).Trim()
+          $tag = "v" + $version
+          $file = Join-Path "assets/news" ("forge-news-v" + $version + ".webp")
+          if (-not (Test-Path -LiteralPath $file)) {
+            throw "Missing image for current version $tag"
           }
-
-          $notes37 = "assets/news/v0.3.37-release-notes.md"
-          if (Test-Path -LiteralPath $notes37) {
-            gh release edit "v0.3.37" --notes-file $notes37 --repo $env:GITHUB_REPOSITORY
-            if ($LASTEXITCODE -ne 0) {
-              throw "Could not refresh original v0.3.37 description"
-            }
+          gh release upload $tag $file --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Could not attach current release image $tag" }
+          $filename = Split-Path $file -Leaf
+          $prior = gh release view $tag --json body --jq ".body" --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw "Could not read release body for $tag" }
+          $body = $prior -join [Environment]::NewLine
+          if (-not $body.Contains($filename)) {
+            $art = "![Forge Hub account](https://github.com/" + $env:GITHUB_REPOSITORY + "/releases/download/" + $tag + "/" + $filename + ")"
+            $notes = Join-Path $env:RUNNER_TEMP ("cfr-news-" + $version + ".md")
+            [IO.File]::WriteAllText($notes, ($art + [Environment]::NewLine + [Environment]::NewLine + $body), [Text.Encoding]::UTF8)
+            gh release edit $tag --notes-file $notes --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) { throw "Could not attach current release description image $tag" }
           }

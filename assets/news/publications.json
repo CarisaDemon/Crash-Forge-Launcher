@@ -3,6 +3,22 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.43",
+      "title": "Forge Hub Accounts & Multi-Monitor Fixes",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.43",
+      "notes": [
+        "Forge Hub login: GitHub website sign-in or username/email and password, plus new-account registration.",
+        "Secure connection of existing Forge Hub accounts with one-time browser approval.",
+        "Profile widget with GitHub avatar, online status, and illustrated Guest fallback.",
+        "Context-specific orange account popup; duplicate ACCOUNT shortcut removed.",
+        "Fixed account windows freezing launcher mouse, keyboard or Close.",
+        "Popup follows the launcher on multiple monitors.",
+        "Fit to Window stays on monitor 2 and restores original geometry.",
+        "Portable Windows ZIP needs no installed Python; updater and editors remain bundled."
+      ]
+    },
+    {
       "version": "0.3.42",
       "title": "Mod folder separation",
       "date": "2026-10-10",
