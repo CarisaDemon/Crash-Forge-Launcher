@@ -40,8 +40,9 @@ class Packager(tk.Tk):
         super().__init__()
         self.title("Crash Forge: Racing - Mod Packager")
         self.configure(bg=DARK)
-        self.minsize(770,570)
-        self.geometry(initial_geometry(1110,790) or "1110x790")
+        self.minsize(760,570)
+        # A compact default works at 1080p AND 4:3. Users can still maximize.
+        self.geometry(initial_geometry(1050,715) or "1050x715")
         try:
             ico=bundle("assets/icons/cfr_icon.ico")
             if ico.is_file():self.iconbitmap(str(ico))
@@ -63,37 +64,58 @@ class Packager(tk.Tk):
         self._ui()
         self._status_bindings()
     def _ui(self):
-        head=tk.Canvas(self,height=140,bg="#16100C",highlightthickness=0)
+        head=tk.Canvas(self,height=115,bg="#16100C",highlightthickness=0)
         head.pack(fill="x")
+        head.pack_propagate(False)
+        self._header_canvas=head
+        self._header_source=None
         image=bundle("assets/Fondo.png")
         if image.is_file():
             try:
-                from PIL import Image,ImageTk,ImageEnhance
+                from PIL import Image,ImageEnhance
                 picture=Image.open(image).convert("RGB")
-                picture=ImageEnhance.Brightness(picture).enhance(.35)
-                picture=picture.resize((1080,180),Image.Resampling.LANCZOS)
-                self.bg_image=ImageTk.PhotoImage(picture)
-                head.create_image(0,0,anchor="nw",image=self.bg_image)
+                self._header_source=ImageEnhance.Brightness(picture).enhance(.38)
             except (ImportError,OSError):pass
-        head.create_rectangle(0,0,8,140,fill=ORANGE,outline="")
-        head.create_text(28,28,text="CRASH FORGE  //  EDITOR",anchor="w",
+        head.bind("<Configure>",self._resize_header)
+        head.create_rectangle(0,0,8,115,fill=ORANGE,outline="",tags="foreground")
+        head.create_text(28,26,text="CRASH FORGE  //  EDITOR",anchor="w",
                          fill=FOREGROUND,font=("Bahnschrift SemiBold",20))
-        head.create_text(29,70,text="MOD PACKAGER",anchor="w",
+        head.create_text(29,65,text="MOD PACKAGER",anchor="w",
                          fill=ORANGE,font=("Bahnschrift SemiBold",25))
-        head.create_text(29,116,text="BUILD • VALIDATE • EXPORT • SHARE",anchor="w",
+        head.create_text(29,103,text="BUILD • VALIDATE • EXPORT • SHARE",anchor="w",
                          fill="#BAC1C8",font=("Bahnschrift",10))
+        for item in head.find_all():
+            head.addtag_withtag("foreground",item)
         content=tk.Frame(self,bg=DARK)
         content.pack(expand=True,fill="both",padx=18,pady=(12,6))
+        # Keep the editor form wider than the compact preview (roughly 60/40).
+        content.columnconfigure(0,weight=3)
+        content.columnconfigure(1,weight=2)
+        content.rowconfigure(0,weight=1)
         body=tk.Frame(content,bg=DARK)
-        body.pack(side="left",fill="both",expand=True,padx=(0,10))
+        body.grid(row=0,column=0,sticky="nsew",padx=(0,10))
         body.columnconfigure(1,weight=1)
-        showcase=tk.Frame(content,bg=PANEL,
-                          highlightbackground=LINE,highlightthickness=1)
-        showcase.pack(side="right",fill="both",expand=True,padx=(5,0))
+        # The right side scrolls independently on short / 4:3 windows, rather
+        # than cutting off thumbnails or expanding the 3D viewport.
+        showcase_shell=tk.Frame(content,bg=PANEL,
+                                highlightbackground=LINE,highlightthickness=1)
+        showcase_shell.grid(row=0,column=1,sticky="nsew",padx=(5,0))
+        right_canvas=tk.Canvas(showcase_shell,bg=PANEL,highlightthickness=0)
+        right_scroll=tk.Scrollbar(showcase_shell,orient="vertical",
+                                 command=right_canvas.yview)
+        right_scroll.pack(side="right",fill="y")
+        right_canvas.pack(side="left",fill="both",expand=True)
+        right_canvas.configure(yscrollcommand=right_scroll.set)
+        showcase=tk.Frame(right_canvas,bg=PANEL)
+        frame_id=right_canvas.create_window((0,0),window=showcase,anchor="nw")
+        showcase.bind("<Configure>",lambda e:right_canvas.configure(
+            scrollregion=right_canvas.bbox("all")))
+        right_canvas.bind("<Configure>",lambda e:right_canvas.itemconfigure(
+            frame_id,width=e.width))
         tk.Label(showcase,text="LIVE ASSET PREVIEW",bg=PANEL,fg=ORANGE,
                  font=("Bahnschrift SemiBold",11),anchor="w").pack(
                      fill="x",padx=11,pady=(10,5))
-        self.viewer=PreviewPane(showcase,width=410,height=285)
+        self.viewer=PreviewPane(showcase,width=410,height=232)
         self.viewer.pack(fill="x",padx=9)
         chooser=tk.Frame(showcase,bg=PANEL)
         chooser.pack(fill="x",padx=9,pady=(7,1))
@@ -171,6 +193,30 @@ class Packager(tk.Tk):
                      secondary=True).pack(side="left",padx=12)
         tk.Label(row,text="Web ID assigned when published",bg="#10141A",
                  fg=MUTED,font=("Bahnschrift",9)).pack(side="right")
+    def _resize_header(self,event):
+        """Cover the entire title bar on all monitors and window formats."""
+        art=self._header_source
+        if art is None or event.width < 20 or event.height < 20:
+            return
+        try:
+            from PIL import Image, ImageTk
+            width,height=event.width,event.height
+            scale=max(width/art.width,height/art.height)
+            resized=art.resize((max(width,int(art.width*scale)),
+                               max(height,int(art.height*scale))),
+                               Image.Resampling.LANCZOS)
+            crop_x=(resized.width-width)//2
+            crop_y=(resized.height-height)//2
+            self.bg_image=ImageTk.PhotoImage(
+                resized.crop((crop_x,crop_y,crop_x+width,crop_y+height)))
+            canvas=self._header_canvas
+            canvas.delete("background")
+            canvas.create_image(0,0,anchor="nw",image=self.bg_image,
+                                tags="background")
+            canvas.tag_lower("background")
+        except (OSError,ValueError):
+            pass
+
     def _status_bindings(self):
         def validate(*args):
             if self.folder or self.selected:
