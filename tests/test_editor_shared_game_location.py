@@ -89,7 +89,10 @@ class EditorSharedInstallationTests(unittest.TestCase):
         build=(ROOT/"release_tools"/"build_windows.ps1").read_text(encoding="utf-8")
         for exe in ("CrashForgeOGGToolkit","CrashForgeCSEQToolkit",
                     "CrashForgeModelImporter"):
-            self.assertIn('--paths $Source --name "'+exe+'"',build)
+            build_part = ('--paths $Source --collect-all numpy --name "'+exe+'"'
+                          if exe == "CrashForgeCSEQToolkit"
+                          else '--paths $Source --name "'+exe+'"')
+            self.assertIn(build_part,build)
         self.assertIn('$modelImporterLogo',build)
         ogg=(ROOT/"companion_tools"/"ogg_toolkit"/"ogg_launcher.py").read_text(encoding="utf-8")
         self.assertIn('subprocess.CREATE_NO_WINDOW',ogg)
