@@ -17,6 +17,8 @@ import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
 import forge_mod_manager as mod_manager
 from forge_dialogs import ask_mod_install, preview_newer_version
+from forge_account_client import AccountClient
+from forge_account_ui import open_account_dialog
 
 try:
     from PIL import Image, ImageTk, ImageOps
@@ -368,6 +370,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._right_card_layout_state = None
         self._resize_origin = None
         self._button_layout_scale = 1.0
+        self.account_client = AccountClient()
+        self._account_dialog = None
 
         # Keep our custom frame, but register this window as a real Windows app
         # so it appears in the taskbar and Alt+Tab.
@@ -1344,6 +1348,35 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             lambda e: self._open_forge_hub_website(),
         )
 
+        # Forge Hub account shortcut. It does not overlap the existing
+        # editor/hub controls, nor the title on narrow 4:3 windows.
+        account_x1 = hub_x2 + 12
+        account_x2 = account_x1 + 111
+        top.create_rectangle(
+            account_x1, editor_y1, account_x2, editor_y2,
+            fill="#0B0E12", outline="#5C6269", width=1,
+            tags=("header", "account_button", "account_frame"),
+        )
+        top.create_rectangle(
+            account_x1, editor_y1, account_x1 + 3, editor_y2,
+            fill=COLORS["orange"], outline="",
+            tags=("header", "account_button"),
+        )
+        top.create_text(
+            (account_x1 + account_x2) / 2 + 2,
+            (editor_y1 + editor_y2) / 2,
+            text=("ACCOUNT *" if self.account_client.signed_in else "ACCOUNT"),
+            fill="#E8E8E4", font=("Bahnschrift SemiBold", 9),
+            tags=("header", "account_button"),
+        )
+        top.tag_bind("account_button", "<Enter>",
+                     lambda e: top.itemconfigure("account_frame",
+                                                  outline=COLORS["orange"]))
+        top.tag_bind("account_button", "<Leave>",
+                     lambda e: top.itemconfigure("account_frame", outline="#5C6269"))
+        top.tag_bind("account_button", "<Button-1>",
+                     lambda e: self._open_account_dialog())
+
         # Version text floats independently; move below the buttons in
         # compact windows to avoid covering the web shortcut.
 
@@ -1427,6 +1460,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         top.tag_bind(
             "win_close", "<Button-1>",
             lambda e: self.destroy()
+        )
+
+    def _open_account_dialog(self):
+        existing = getattr(self, "_account_dialog", None)
+        if existing is not None:
+            try:
+                if existing.window.winfo_exists():
+                    existing.window.lift()
+                    return
+            except Exception:
+                pass
+        self._account_dialog = open_account_dialog(
+            self, self.account_client,
+            on_change=lambda: self._paint_floating_header(),
         )
 
     def _open_forge_hub_website(self):
