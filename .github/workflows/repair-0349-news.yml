@@ -1,0 +1,29 @@
+name: Correct v0.3.49 illustration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - assets/news/forge-news-v0.3.49.webp
+      - .github/workflows/repair-0349-news.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-artwork:
+    if: contains(github.event.head_commit.message, '[repair-artwork-0349]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact creator-provided artwork
+        uses: actions/checkout@v4
+      - name: Replace artwork on published v0.3.49 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s assets/news/forge-news-v0.3.49.webp
+          gh release view v0.3.49 --repo "$GITHUB_REPOSITORY" >/dev/null
+          gh release upload v0.3.49 assets/news/forge-news-v0.3.49.webp --clobber --repo "$GITHUB_REPOSITORY"
+          echo 'Replaced v0.3.49 NEWS illustration without touching game releases.'
