@@ -58,7 +58,8 @@ def main() -> int:
     programs = (mainexe, updater,
                 toolfolder / "CrashForgeOGGToolkit.exe",
                 toolfolder / "CrashForgeCSEQToolkit.exe",
-                toolfolder / "CrashForgeModelImporter.exe")
+                toolfolder / "CrashForgeModelImporter.exe",
+              toolfolder / "CrashForgeModPackager.exe")
     for exe in programs:
         pe_gui(exe)
 

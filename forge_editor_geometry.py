@@ -71,3 +71,33 @@ def select_window_geometry(window_width, window_height, parent_rect, monitor_are
     x = min(max(px + (pw - w) // 2, left), right - w)
     y = min(max(py + (ph - h) // 2, top), bottom - h)
     return tk_absolute_geometry(w, h, x, y)
+def enforce_native_window_position(window, x, y, width, height):
+    """Pin the borderless Editor Toplevel to the LAUNCHER's actual monitor.
+
+    Tk/Windows sometimes maps borderless transient windows to the primary
+    monitor *after* setting their geometry. SetWindowPos uses signed virtual
+    desktop coordinates; it does not move the user's launcher.
+    """
+    try:
+        if not window.winfo_exists():
+            return False
+        window.geometry(tk_absolute_geometry(width, height, x, y))
+        if os.name != "nt":
+            return True
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.GetParent.argtypes = [ctypes.c_void_p]
+        user32.GetParent.restype = ctypes.c_void_p
+        user32.SetWindowPos.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_uint
+        ]
+        user32.SetWindowPos.restype = ctypes.c_int
+        child = ctypes.c_void_p(int(window.winfo_id()))
+        hwnd = user32.GetParent(child) or child.value
+        # SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+        return bool(user32.SetWindowPos(
+            ctypes.c_void_p(hwnd), None, int(x), int(y),
+            int(width), int(height), 0x0004 | 0x0010 | 0x0040))
+    except (AttributeError, OSError, RuntimeError, ValueError):
+        return False

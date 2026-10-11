@@ -98,20 +98,31 @@ def account_popup_position(parent_x, parent_y, badge_layout,
     y = max(top + 3, min(desired_y, bottom - popup_height - 3))
     return (x, y)
 
-def account_label(profile, *, connected, signed_in, pending=False):
-    """Never show a signed-in user as Guest during a temporary auth outage.
+def account_label(profile, *, connected, signed_in, pending=False, problem=None):
+    """Keep an encrypted login distinct from the latest service health check.
 
-    Session presence and online validation are different states. The last
-    validated display name survives launcher restarts without a network fetch.
+    "Reconnecting" is not a sign-out. Only a confirmed server response may
+    produce the green "Online" state. An expired refresh token instead asks
+    for reauthentication without silently erasing the account.
     """
     profile = profile if isinstance(profile, dict) else {}
     if not signed_in:
         return {"name": "Guest", "status": "Not signed in", "online": False,
                 "avatar_url": None}
     name = profile.get("username") or profile.get("display_name") or "My Account"
+    if connected:
+        status = "Online"
+    elif problem == "expired":
+        status = "Sign in again"
+    elif problem == "connection":
+        status = "Reconnecting..."
+    elif pending:
+        status = "Connecting..."
+    else:
+        status = "Offline"
     return {
         "name": str(name)[:22],
-        "status": "Online" if connected else ("Connecting..." if pending else "Offline"),
+        "status": status,
         "online": bool(connected),
         "avatar_url": github_avatar_url(profile.get("avatar_url")),
     }

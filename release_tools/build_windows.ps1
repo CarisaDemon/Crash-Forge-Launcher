@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp", "forge-news-v0.3.49.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
@@ -66,6 +66,11 @@ Write-Output "Building bundled OGG music toolkit..."
 & $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --name "CrashForgeOGGToolkit" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $oggSource --add-data $forgeBackground --add-data $forgeLogo --add-data $forgeIcon --distpath (Join-Path $BuildRoot "ogg_toolkit") --workpath (Join-Path $workRoot "ogg_toolkit") --specpath $specRoot (Join-Path $Source "companion_tools\ogg_toolkit\ogg_launcher.py")
 if($LASTEXITCODE -ne 0){throw "OGG Music Toolkit build failed"}
 Copy-Item -LiteralPath (Join-Path $BuildRoot "ogg_toolkit\CrashForgeOGGToolkit.exe") -Destination (Join-Path $toolsTarget "CrashForgeOGGToolkit.exe") -Force
+
+Write-Output "Building bundled Mod Packager (native modular ZIP editor)..."
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --name "CrashForgeModPackager" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $modelImporterBackground --add-data $modelImporterIcon --add-data $modelImporterLogo --distpath (Join-Path $BuildRoot "mod_packager") --workpath (Join-Path $workRoot "mod_packager") --specpath $specRoot (Join-Path $Source "companion_tools\mod_packager\mod_packager_gui.py")
+if($LASTEXITCODE -ne 0){throw "Mod Packager build failed"}
+Copy-Item -LiteralPath (Join-Path $BuildRoot "mod_packager\CrashForgeModPackager.exe") -Destination (Join-Path $toolsTarget "CrashForgeModPackager.exe") -Force
 
 $assets = @(
   @{Source="assets\Fondo.png"; Target="assets\Fondo.png"},

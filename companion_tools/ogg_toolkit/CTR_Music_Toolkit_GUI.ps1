@@ -1448,15 +1448,14 @@ $pathBox.Width = [Math]::Max(350, $pathCard.ClientSize.Width - 260)
 $btnRoot.Left = $pathCard.ClientSize.Width - 218
 $btnAbout.Left = $pathCard.ClientSize.Width - 104
 
-$btnRoot.Add_Click({ Pick-Root })
-$pathBox.Add_KeyDown({
-    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
-        [void](Apply-RootFromBox)
-        $_.SuppressKeyPress = $true
-    }
+# Game directory is read-only here; only Launcher > Settings can change it.
+$pathBox.ReadOnly = $true
+$btnRoot.Text = "SETTINGS"
+$btnRoot.Add_Click({
+    Show-Info "The game installation folder is managed by Crash Forge Launcher > Settings."
 })
 $btnAbout.Add_Click({
-    Show-Info "Crash Forge OGG Toolkit v1.0.9`n`nManage custom OGG tracks for Crash Forge: Racing. Select a game folder or type its path and press Enter.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
+    Show-Info "Crash Forge OGG Toolkit v1.0.9`n`nManage custom OGG tracks for Crash Forge: Racing. The game folder is shared automatically with Crash Forge Launcher Settings.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
 })
 $btnAdd.Add_Click({ Add-Music })
 $btnFinal.Add_Click({ Create-FinalLap })

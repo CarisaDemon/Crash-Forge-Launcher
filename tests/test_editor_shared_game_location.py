@@ -33,19 +33,19 @@ class EditorSharedInstallationTests(unittest.TestCase):
 
     def test_all_editor_exes_automatically_use_saved_launcher_folder(self):
         for name in ("CrashForgeOGGToolkit.exe","CrashForgeCSEQToolkit.exe",
-                     "CrashForgeModelImporter.exe"):
+                     "CrashForgeModelImporter.exe", "CrashForgeModPackager.exe"):
             with self.subTest(exe=name):
                 found=find_game_installation(
                     executable=self.tools/name, environment={})
                 self.assertEqual(found,self.game.resolve())
 
-    def test_valid_env_overrides_settings_but_bad_env_does_not(self):
+    def test_stale_env_never_overrides_selected_launcher_folder(self):
         other=self.game.parent/"Other"
         other.mkdir()
         (other/"ctr_native.exe").write_bytes(b"MZTEST")
         self.assertEqual(find_game_installation(
             executable=self.tools/"CrashForgeOGGToolkit.exe",
-            environment={"CFR_GAME_PATH":str(other)}),other.resolve())
+            environment={"CFR_GAME_PATH":str(other)}),self.game.resolve())
         self.assertEqual(find_game_installation(
             executable=self.tools/"CrashForgeOGGToolkit.exe",
             environment={"CFR_GAME_PATH":"C:/invalid-path"}),self.game.resolve())
@@ -97,7 +97,7 @@ class EditorSharedInstallationTests(unittest.TestCase):
         ogg=(ROOT/"companion_tools"/"ogg_toolkit"/"ogg_launcher.py").read_text(encoding="utf-8")
         self.assertIn('subprocess.CREATE_NO_WINDOW',ogg)
         self.assertIn('subprocess.STARTF_USESHOWWINDOW',ogg)
-        self.assertIn('find_game_installation',ogg)
+        self.assertIn('selected_game_directory',ogg)
         powershell=(ROOT/"companion_tools"/"ogg_toolkit"/"CTR_Music_Toolkit_GUI.ps1").read_text(encoding="utf-8-sig")
         self.assertIn('99 = "HANGOUT_HUB"',powershell)
         self.assertIn('$script:ReferenceIds = @(0..64) + @(99)',powershell)

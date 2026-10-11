@@ -21,6 +21,7 @@ CRITICAL = (
     "CrashForgeLauncher.exe", "ForgeLauncherUpdater.exe", "launcher_version.txt",
     "_internal/_tcl_data/init.tcl", "_internal/_tk_data/tk.tcl",
     "_internal/tcl86t.dll", "_internal/tk86t.dll", "_internal/_tkinter.pyd",
+    "_internal/editor_tools/CrashForgeModPackager.exe",
 )
 USER_FILES = {"forge_online_config.json", "launcher_settings.json",
               "installed_mods.json", "community_catalog.json"}

@@ -36,7 +36,8 @@ def verify_folder(location):
         files.append(rel)
     if len(files)>lu.MAX_FILES:
         raise lu.LauncherUpdateError("Too many files in Windows release")
-    expected={lu.APP_EXE.lower(),lu.UPDATER_EXE.lower(),"launcher_version.txt"}
+    expected={lu.APP_EXE.lower(),lu.UPDATER_EXE.lower(),"launcher_version.txt",
+              "_internal/editor_tools/crashforgemodpackager.exe"}
     names={x.lower() for x in files}
     assert_tcl_payload(names)
     if not expected.issubset(names):

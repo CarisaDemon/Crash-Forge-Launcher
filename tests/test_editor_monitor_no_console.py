@@ -79,11 +79,11 @@ class EditorMonitorAndConsoleTests(unittest.TestCase):
                     self.assertEqual(Path(resolved).resolve(),(bundled/name).resolve())
                     self.assertTrue(resolved.lower().endswith(".exe"))
 
-    def test_all_three_tools_and_updater_build_with_gui_subsystem(self):
+    def test_all_four_tools_and_updater_build_with_gui_subsystem(self):
         script=(ROOT/"release_tools"/"build_windows.ps1").read_text(encoding="utf-8")
         for name in (*EDITORS.values(),"ForgeLauncherUpdater.exe"):
             self.assertIn(f'--name "{name[:-4]}"',script)
-        self.assertGreaterEqual(script.count("--windowed"),5)
+        self.assertGreaterEqual(script.count("--windowed"),6)
         source=(ROOT/"launcher.py").read_text(encoding="utf-8")
         self.assertIn("editor_registry.editor_executable(",source)
         self.assertIn("startupinfo=startup",source)

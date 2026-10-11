@@ -7,14 +7,15 @@ import sys
 
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from forge_editor_config import find_game_installation
+from forge_editor_config import selected_game_directory
 
 def bundled_resources():
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
 def create_editor_environment():
     env = os.environ.copy()
-    game = find_game_installation(source_file=__file__)
+    game = selected_game_directory(source_file=__file__)
+    env.pop("CFR_GAME_PATH", None)
     if game is not None:
         env["CFR_GAME_PATH"] = str(game)
     return env

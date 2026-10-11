@@ -1,7 +1,8 @@
-"""Crash Forge: Racing - native kart palette support.
+"""Native kart texture variants. One OBJ, one MTL, custom-named skin atlases.
 
-One OBJ, one MTL, one kart.ini. Only differently colored atlases are copied;
-the source image matching the default MTL texture stays untouched.
+The game reads [colors] entries in order, using each key as the on-screen
+display name (up to 23 UTF-8 bytes), not a pre-defined color vocabulary.
+The first entry is always the untouched default material texture.
 """
 from __future__ import annotations
 
@@ -12,11 +13,15 @@ import re
 import shutil
 import struct
 import tempfile
+import unicodedata
 
+# Legacy order is retained for old mods; names outside this list are valid.
 PALETTE = ("blue", "red", "lime", "pink", "blank", "green", "yellow",
            "orange", "purple", "black", "white", "silver", "gold")
-ASSET_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 IMAGE_TYPES = (".png", ".bmp")
+MAX_VARIANTS = 12  # VEHICLE_PART_MAX_COLORS, including the original.
+MAX_DISPLAY_BYTES = 23  # VehiclePartDef.colorNames[][24] including NUL.
+ASSET_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 class KartColorError(ValueError):
@@ -24,51 +29,99 @@ class KartColorError(ValueError):
 
 
 def image_dimensions(path):
-    with open(path, "rb") as f:
-        h = f.read(26)
-    if h[:8] == b"\x89PNG\r\n\x1a\n" and len(h) >= 24:
-        return struct.unpack(">II", h[16:24])
-    if h[:2] == b"BM" and len(h) >= 26:
-        return struct.unpack("<I", h[18:22])[0], abs(struct.unpack("<i", h[22:26])[0])
-    raise KartColorError("Only PNG and BMP textures are supported: " + str(path))
+    with open(path, "rb") as fh:
+        header = fh.read(26)
+    if header[:8] == b"\x89PNG\r\n\x1a\n" and len(header) >= 24:
+        return struct.unpack(">II", header[16:24])
+    if header[:2] == b"BM" and len(header) >= 26:
+        return struct.unpack("<I", header[18:22])[0], abs(struct.unpack("<i", header[22:26])[0])
+    raise KartColorError("Supported color textures: PNG or BMP only (" + str(path) + ").")
 
 
 def sha(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _slug(text):
+    ascii_name = unicodedata.normalize("NFKD", str(text))
+    ascii_name = ascii_name.encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"[^a-z0-9]+", "_", ascii_name).strip("_")[:46] or "variant"
+
+
+def validate_display_name(value):
+    title = str(value).strip()
+    if (not title or len(title.encode("utf-8")) > MAX_DISPLAY_BYTES
+            or any(ch in title for ch in "\r\n=[];#")
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in title)):
+        raise KartColorError(
+            "Color names must be 1-23 UTF-8 bytes and cannot contain = [ ] ; # or line breaks.")
+    return title
+
+
+def suggest_name(filename):
+    stem = Path(filename).stem
+    words = re.split(r"[_\-\s]+", stem)
+    while len(words) > 1 and words[-1].lower() in (
+            "texture", "textures", "atlas", "skin", "skins", "kart", "karts", "diffuse"):
+        words.pop()
+    suggested = " ".join(words).strip() or stem
+    # The fixed colors are still good suggestions for old mods, but are NOT required.
+    legacy = suggested.lower()
+    if legacy in PALETTE:
+        return legacy
+    while len(suggested.encode("utf-8")) > MAX_DISPLAY_BYTES:
+        suggested = suggested[:-1]
+    return validate_display_name(suggested.strip() or "Variant")
+
+
+def scan_palette(folder):
+    """List every PNG/BMP texture, original filename and editable suggested name."""
+    path = Path(folder)
+    if not path.is_dir() or path.is_symlink():
+        raise KartColorError("Select a folder containing the kart skin textures (PNG/BMP).")
+    items = []
+    for file in sorted(path.iterdir(), key=lambda p: p.name.casefold()):
+        if not file.is_file() or file.is_symlink() or file.suffix.lower() not in IMAGE_TYPES:
+            continue
+        try:
+            dimensions = image_dimensions(file)
+            if dimensions[0] < 1 or dimensions[1] < 1:
+                raise KartColorError("Invalid image dimensions: " + file.name)
+        except (OSError, ValueError, struct.error) as exc:
+            raise KartColorError("Invalid color texture " + file.name + ": " + str(exc)) from exc
+        items.append({"file": file, "filename": file.name,
+                      "suggested_name": suggest_name(file.name),
+                      "dimensions": dimensions})
+    if not items:
+        raise KartColorError("No PNG/BMP textures found. Names can be anything.")
+    return items
 
 
 def find_palette(folder):
-    """Find a recognizable color name at the start of each image name."""
-    directory = Path(folder)
-    if not directory.is_dir():
-        raise KartColorError("Select a valid folder containing colored PNG/BMP textures.")
-    detected = {}
-    for file in sorted(directory.iterdir(), key=lambda x: x.name.lower()):
-        if not file.is_file() or file.suffix.lower() not in IMAGE_TYPES:
-            continue
-        normalized = re.sub(r"[^a-z]+", " ", file.stem.lower()).split()
-        if not normalized:
-            continue
-        name = normalized[0]
-        if name in PALETTE and name not in detected:
-            detected[name] = file
-    if not detected:
-        raise KartColorError("No colored textures found. Prefix filenames with Blue_, Red_, etc.")
-    dimensions = {c: image_dimensions(p) for c, p in detected.items()}
-    if len(set(dimensions.values())) != 1:
-        raise KartColorError("Color textures must all have the same size/UV layout.")
-    return detected
+    """Compatibility helper; accepts arbitrary texture names, not just PALETTE."""
+    found = {}
+    for item in scan_palette(folder):
+        key = _slug(item["suggested_name"])
+        original = key
+        suffix = 2
+        while key in found:
+            key = f"{original}_{suffix}"
+            suffix += 1
+        found[key] = item["file"]
+    dimensions = {image_dimensions(p) for p in found.values()}
+    if len(dimensions) != 1:
+        raise KartColorError("Color textures must share the kart atlas dimensions.")
+    return found
 
 
 def read_kart_texture(kart_folder):
     folder = Path(kart_folder)
-    cfg = folder / "kart.ini"
-    if not cfg.is_file():
-        raise KartColorError("Selected folder has no kart.ini.")
+    if not (folder / "kart.ini").is_file():
+        raise KartColorError("Kart folder has no kart.ini.")
     models = list(folder.glob("*.obj"))
     if len(models) != 1:
         raise KartColorError("Kart folder must contain exactly one OBJ.")
@@ -80,112 +133,174 @@ def read_kart_texture(kart_folder):
                 mtllib = line.strip()[7:].strip().strip('"')
                 break
     if not mtllib or "/" in mtllib or "\\" in mtllib:
-        raise KartColorError("OBJ needs a local mtllib entry.")
+        raise KartColorError("OBJ must reference its local MTL file.")
     mtl = folder / mtllib
     if not mtl.is_file():
-        raise KartColorError("Missing material file: " + mtllib)
+        raise KartColorError("Missing kart MTL: " + mtllib)
     textures = []
     with mtl.open("r", encoding="utf-8-sig", errors="replace") as source:
         for line in source:
             if line.lstrip().startswith("map_Kd "):
                 textures.append(line.strip()[7:].strip().strip('"'))
     if len(textures) != 1:
-        raise KartColorError("Color switching currently needs one mapped texture in the MTL.")
-    filename = textures[0]
-    if not filename or "/" in filename or "\\" in filename or Path(filename).suffix.lower() not in IMAGE_TYPES:
-        raise KartColorError("MTL's map_Kd must name a local PNG/BMP image.")
-    return folder / filename
+        raise KartColorError("Kart skin switching currently requires a single mapped texture atlas.")
+    name = textures[0]
+    if not name or "/" in name or "\\" in name or Path(name).suffix.lower() not in IMAGE_TYPES:
+        raise KartColorError("MTL's map_Kd must reference one local PNG/BMP atlas.")
+    return folder / name
 
 
-def update_color_ini(text, pairs):
-    """Preserve existing [kart], [model], [attachments], all comments and settings."""
+def update_color_ini(text, named_textures):
+    """Replace only [colors], preserving all native settings and other sections."""
     if not text.strip():
-        raise KartColorError("Empty kart.ini")
-    pattern = re.compile(r"(?ims)^\s*\[colors\][^\r\n]*\r?\n.*?(?=^\s*\[[^\]\r\n]+\]|\\Z)")
-    # Use a precise line-oriented pattern instead of a generic INI rewriter.
-    m = re.search(r"(?im)^\s*\[colors\]\s*$", text)
-    if m:
-        trailing = re.search(r"(?m)^\s*\[[^\]\r\n]+\]\s*$", text[m.end():])
-        end = m.end() + trailing.start() if trailing else len(text)
-        text = text[:m.start()] + text[end:]
-    lines = ["[colors]"]
-    for name in PALETTE:
-        if name in pairs:
-            lines.append(name + " = " + pairs[name])
+        raise KartColorError("Empty kart.ini.")
+    match = re.search(r"(?im)^[ \t]*\[colors\][ \t]*$", text)
+    if match:
+        following = re.search(r"(?m)^[ \t]*\[[^\]\r\n]+\][ \t]*$",
+                              text[match.end():])
+        end = match.end() + following.start() if following else len(text)
+        text = text[:match.start()] + text[end:]
+    lines = ["[colors]"] + [name + " = " + filename
+                           for name, filename in named_textures.items()]
     return text.rstrip() + "\n\n" + "\n".join(lines) + "\n"
 
 
-def install_colors(kart_folder, palette_folder, *, dry_run=False):
-    """Add color variants to a native kart mod without touching its OBJ/MTL."""
+def _existing_default_name(ini, base_file):
+    text = ini.read_text(encoding="utf-8-sig")
+    match = re.search(r"(?im)^[ \t]*\[colors\][ \t]*$", text)
+    if match:
+        for line in text[match.end():].splitlines():
+            if line.strip().startswith("["):
+                break
+            if "=" in line:
+                label, filename = line.split("=", 1)
+                if filename.strip().casefold() == base_file.casefold():
+                    try:
+                        return validate_display_name(label)
+                    except KartColorError:
+                        pass
+                break
+    return None
+
+
+def install_colors(kart_folder, palette_folder, *, dry_run=False,
+                   variants=None, default_name=None):
+    """Copy chosen textures, saving arbitrary in-game names in kart.ini.
+
+    variants: optional {source_filename: user_display_name}. When omitted,
+    include all discovered compatible images, preserving old palette support.
+    """
     folder = Path(kart_folder)
     ini = folder / "kart.ini"
     base = read_kart_texture(folder)
-    discovered = find_palette(palette_folder)
-    # Blue already matches CTRCinematicKart.png, so never duplicate it.
-    blue = discovered.get("blue")
-    if not base.is_file() and blue is None:
-        raise KartColorError("Default MTL texture missing; provide a Blue_ texture.")
-    expected = image_dimensions(base if base.is_file() else blue)
-    plan = {}
+    scanned = scan_palette(palette_folder)
+    by_file = {item["filename"].casefold(): item for item in scanned}
+    if variants is not None:
+        if not isinstance(variants, dict):
+            raise KartColorError("Selected color variants must map filenames to display names.")
+        chosen = []
+        for name, title in variants.items():
+            entry = by_file.get(str(name).casefold())
+            if entry is None:
+                raise KartColorError("Selected texture not found: " + str(name))
+            chosen.append((entry, validate_display_name(title)))
+    else:
+        # Old palettes keep their familiar ordering. Unrecognized skins follow
+        # alphabetically; there is no fixed color vocabulary.
+        chosen = [(item, item["suggested_name"]) for item in sorted(
+            scanned, key=lambda row: (
+                PALETTE.index(row["suggested_name"]) if row["suggested_name"] in PALETTE
+                else len(PALETTE), row["filename"].casefold()))]
+    if not chosen:
+        raise KartColorError("Select at least one extra texture to add.")
+    available_default = None
     if base.is_file():
+        expected = image_dimensions(base)
         base_hash = sha(base)
     else:
-        base_hash = sha(blue)
-        plan[base.name] = blue
-
-    selected = {"blue": base.name}
-    for name in PALETTE:
-        if name == "blue" or name not in discovered:
+        fallback = next((item for item in scanned
+                         if item["suggested_name"].casefold() == "blue"), scanned[0])
+        available_default = fallback["file"]
+        expected = fallback["dimensions"]
+        base_hash = sha(available_default)
+    if default_name is None:
+        default_name = _existing_default_name(ini, base.name)
+        if default_name is None:
+            same = next((item for item in scanned if sha(item["file"]) == base_hash), None)
+            default_name = same["suggested_name"] if same else "Original"
+    default_name = validate_display_name(default_name)
+    result = {default_name: base.name}
+    used_names = {default_name.casefold()}
+    used_files = {base.name.casefold()}
+    used_hashes = {base_hash}
+    plan = {}
+    if available_default is not None:
+        plan[base.name] = available_default
+    for item, title in chosen:
+        path = item["file"]
+        if item["dimensions"] != expected:
+            raise KartColorError(
+                item["filename"] + " has different dimensions from the original kart atlas "
+                + str(expected[0]) + "x" + str(expected[1]) + ".")
+        digest = sha(path)
+        if digest in used_hashes:
             continue
-        original = discovered[name]
-        if image_dimensions(original) != expected:
-            raise KartColorError(name + " has different dimensions from the kart's default texture.")
-        if sha(original) == base_hash:
-            continue  # A texture identical to the default is not a new option.
-        dest_name = "color_" + name + original.suffix.lower()
+        used_hashes.add(digest)
+        if title.casefold() in used_names:
+            raise KartColorError("Duplicate name in game: " + title)
+        used_names.add(title.casefold())
+        if len(result) >= MAX_VARIANTS:
+            raise KartColorError("At most 12 kart variants including the original.")
+        slug = _slug(item["suggested_name"])
+        # Preserve legacy color_red.png; arbitrary patterns also work.
+        dest_name = "color_" + slug + path.suffix.lower()
+        if dest_name.casefold() in used_files:
+            raise KartColorError("Two skins have the same output filename: " + dest_name)
+        used_files.add(dest_name.casefold())
         dest = folder / dest_name
-        if dest.is_file() and sha(dest) != sha(original):
-            raise KartColorError("Existing variant differs, refusing overwrite: " + dest_name)
-        selected[name] = dest_name
-        if not dest.exists():
-            plan[dest_name] = original
-    if len(selected) < 2:
-        raise KartColorError("No additional colors differ from the default texture.")
-    updated = update_color_ini(ini.read_text(encoding="utf-8-sig"), selected)
-    result = {"kart": str(folder), "variants": selected,
-              "new_textures": list(plan), "skipped_duplicate_blue": blue is not None and sha(blue) == base_hash}
+        if dest.is_file() and sha(dest) != digest:
+            raise KartColorError("Existing texture differs; not overwriting " + dest_name)
+        result[title] = dest_name
+        if not dest.is_file():
+            plan[dest_name] = path
+    if len(result) < 2:
+        raise KartColorError("No additional textures differ from the default kart atlas.")
+    updated = update_color_ini(ini.read_text(encoding="utf-8-sig"), result)
+    response = {"kart": str(folder), "variants": result,
+                "new_textures": list(plan),
+                "skipped_duplicate_blue": any(
+                    item["suggested_name"].lower() == "blue"
+                    and sha(item["file"]) == base_hash for item in scanned)}
     if dry_run:
-        return result
+        return response
     original_ini = ini.read_bytes()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     backup = ini.with_name("kart.ini.before_colors_" + timestamp + ".bak")
-    if backup.exists():
-        backup = ini.with_name("kart.ini.before_colors_" + timestamp + "_2.bak")
     created = []
     try:
         for name, source in plan.items():
-            target = folder / name
-            if target.exists():
+            dest = folder / name
+            if dest.exists():
                 raise KartColorError("File already exists: " + name)
-            shutil.copy2(source, target)
-            created.append(target)
+            shutil.copy2(source, dest)
+            created.append(dest)
         shutil.copy2(ini, backup)
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=folder,
-                                         prefix=".kart-colors-", suffix=".tmp",
-                                         delete=False) as f:
-            tmp = Path(f.name)
-            f.write(updated)
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=folder, prefix=".kart-colors-",
+                suffix=".tmp", delete=False) as handle:
+            tmp = Path(handle.name)
+            handle.write(updated)
         try:
             tmp.replace(ini)
         finally:
             tmp.unlink(missing_ok=True)
     except Exception:
-        for p in created:
-            p.unlink(missing_ok=True)
+        for path in created:
+            path.unlink(missing_ok=True)
         if backup.is_file():
             shutil.copy2(backup, ini)
         else:
             ini.write_bytes(original_ini)
         raise
-    result["backup"] = str(backup)
-    return result
+    response["backup"] = str(backup)
+    return response

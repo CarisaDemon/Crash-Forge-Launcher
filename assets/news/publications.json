@@ -3,6 +3,19 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.49",
+      "title": "Mod Packager, Live 3D Previews & Editor Fixes",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.49",
+      "notes": [
+        "New Mod Packager for characters, karts, wheels and native tracks.",
+        "Live model preview with rotating OBJ/LEV geometry and texture thumbnails.",
+        "Kart palettes: automatic skin detection, editable custom names, a single workflow.",
+        "OGG, CSEQ, Model Importer and Packager share Launcher Settings game path.",
+        "Forge Hub reconnects more gracefully without losing the saved account."
+      ]
+    },
+    {
       "version": "0.3.48",
       "title": "Play Safety: Missing Official Game Files",
       "date": "2026-10-11",

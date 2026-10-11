@@ -21,10 +21,11 @@ import forge_news_history as news_history
 import forge_game_news as game_news
 import forge_editor_registry as editor_registry
 import forge_editor_geometry as editor_geometry
+import forge_editor_config as editor_config
 import forge_mod_manager as mod_manager
 import forge_account_badge as account_badge
 from forge_dialogs import ask_mod_install, preview_newer_version
-from forge_account_client import AccountClient
+from forge_account_client import AccountClient, AccountError
 from forge_account_ui import open_account_dialog
 
 try:
@@ -382,6 +383,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_profile = self.account_client.cached_profile()
         self._account_badge_connected = False
         self._account_badge_pending = bool(self.account_client.signed_in)
+        self._account_badge_problem = None
+        self._account_badge_busy = False
         self._account_badge_generation = 0
         self._account_badge_queue = queue.Queue()
         self._account_badge_avatar_url = ""
@@ -1470,6 +1473,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             connected=self._account_badge_connected,
             signed_in=active,
             pending=self._account_badge_pending,
+            problem=self._account_badge_problem,
         )
         tag = ("header", "forge_account_chip")
         top.create_rectangle(x1, y1, x2, y2, fill="#10151B",
@@ -1690,6 +1694,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_profile = {}
         self._account_badge_connected = False
         self._account_badge_pending = False
+        self._account_badge_problem = None
+        self._account_badge_busy = False
         self._account_badge_avatar_url = ""
         self._account_badge_avatar_photo = None
         self._paint_floating_header()
@@ -1711,18 +1717,29 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_refresh_async()
 
     def _account_badge_refresh_async(self):
-        """Nonblocking identity validation; green only after server confirmation."""
-        self._account_badge_generation += 1
-        generation = self._account_badge_generation
+        """Single nonblocking request, with safe retry on temporary failures."""
         if not self.account_client.signed_in:
             self._account_badge_clear()
             return
+        if self._account_badge_busy:
+            return
+        self._account_badge_generation += 1
+        generation = self._account_badge_generation
+        self._account_badge_busy = True
+        self._account_badge_pending = True
+        self._paint_floating_header()
+
         def worker():
             try:
                 profile = self.account_client.profile()
-                result = (profile, True)
+                result = (profile, True, None)
+            except AccountError as exc:
+                # A single 401 from Supabase means authentication failed, not
+                # that we should erase a user's encrypted saved session.
+                invalid = "expired session" in str(exc).lower()
+                result = (None, False, "expired" if invalid else "connection")
             except Exception:
-                result = (None, False)
+                result = (None, False, "connection")
             self._account_badge_queue.put(("profile", result, generation))
         threading.Thread(target=worker, daemon=True,
                          name="ForgeBadgeProfileCheck").start()
@@ -1741,11 +1758,21 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             if generation != self._account_badge_generation:
                 continue
             if kind == "profile":
-                profile, connected = payload
+                profile, connected, problem = payload
+                self._account_badge_busy = False
                 self._account_badge_pending = False
                 if profile is not None:
                     self._account_badge_profile = profile
                 self._account_badge_connected = bool(connected)
+                self._account_badge_problem = problem
+                if (problem == "connection" and
+                        self.account_client.signed_in):
+                    # Recheck after network recovery instead of leaving the
+                    # badge grey for the entire two-minute polling interval.
+                    self.after(25000, lambda epoch=generation:
+                               self._account_badge_refresh_async()
+                               if (self._account_badge_generation == epoch
+                                   and self.account_client.signed_in) else None)
                 url = account_badge.github_avatar_url(
                     self._account_badge_profile.get("avatar_url"))
                 if not url:
@@ -1836,18 +1863,14 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         try:
             if os.name == "nt" and str(path).lower().endswith(".exe"):
                 env = os.environ.copy()
-                game = os.path.abspath(str(getattr(self, "game_install_path", "") or ""))
-                if os.path.isdir(game) and any(
-                    os.path.isfile(os.path.join(game, exe))
-                    for exe in ("ctr-native.exe", "ctr_native.exe")
-                ):
-                    # The two music editors scan the installed mod tree.
-                    # Never hardcode custom tracks or game installation paths.
+                # The game path selected in Launcher Settings is authoritative
+                # even if an update is currently installing the executable.
+                # Remove any inherited stale overrides before passing it on.
+                env.pop("CFR_GAME_PATH", None)
+                env["CFR_LAUNCHER_SETTINGS"] = os.path.abspath(SETTINGS_FILE)
+                game = str(getattr(self, "game_install_path", "") or "").strip()
+                if game:
                     env["CFR_GAME_PATH"] = game
-                # Editors can open independently as well: they all read the
-                # same saved installation folder as this launcher.
-                if os.path.isfile(SETTINGS_FILE):
-                    env["CFR_LAUNCHER_SETTINGS"] = os.path.abspath(SETTINGS_FILE)
                 # Pick monitor by LAUNCHER location, not the process desktop's
                 # primary display. Negative virtual coordinates are supported.
                 workarea = self._current_monitor_workarea()
@@ -1885,19 +1908,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             except Exception:
                 pass
 
+        # Create without displaying on the primary monitor first. The selector
+        # must stay with THIS launcher even on left/above-primary displays.
+        self.update_idletasks()
+        monitor = self._current_monitor_workarea()
         win = tk.Toplevel(self)
+        win.withdraw()
         self._editor_window = win
         win.title("Crash Forge: Editor")
         win.configure(bg="#090B0E")
         win.resizable(False, False)
         win.overrideredirect(True)
-        win.transient(self)
 
-        width = 900
-        height = 520
-
-        self.update_idletasks()
-        monitor = self._current_monitor_workarea()
+        width = min(900, monitor[2]) if monitor else 900
+        height = min(700, monitor[3]) if monitor else 700
         if monitor:
             left, top, work_w, work_h = monitor
             geometry = editor_geometry.select_window_geometry(
@@ -1907,6 +1931,10 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 (left, top, left + work_w, top + work_h),
             )
             win.geometry(geometry)
+            x = min(max(self.winfo_rootx() + (self.winfo_width() - width) // 2, left),
+                    left + work_w - width)
+            y = min(max(self.winfo_rooty() + (self.winfo_height() - height) // 2, top),
+                    top + work_h - height)
         else:
             x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
             y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
@@ -2014,9 +2042,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             drag["y"] = event.y_root - win.winfo_y()
 
         def do_drag(event):
-            win.geometry(
-                f"+{event.x_root - drag['x']}+{event.y_root - drag['y']}"
-            )
+            win.geometry(editor_geometry.tk_absolute_position(
+                event.x_root - drag["x"], event.y_root - drag["y"]))
 
         canvas.bind("<Button-1>", begin_drag)
         canvas.bind("<B1-Motion>", do_drag)
@@ -2040,20 +2067,22 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         )
 
         cards_host = tk.Frame(win, bg="#0A0D10")
+        host_width = min(820, width - 32)
+        host_height = min(432, max(305, height - 230))
         canvas.create_window(
             width // 2,
-            310,
-            width=812,
-            height=270,
+            172 + host_height // 2,
+            width=host_width,
+            height=host_height,
             window=cards_host,
             anchor="center",
         )
-
         cards_host.grid_columnconfigure(0, weight=1, uniform="tool")
         cards_host.grid_columnconfigure(1, weight=1, uniform="tool")
-        cards_host.grid_columnconfigure(2, weight=1, uniform="tool")
+        cards_host.grid_rowconfigure(0, weight=1, uniform="toolrow")
+        cards_host.grid_rowconfigure(1, weight=1, uniform="toolrow")
 
-        def make_tool_card(col, title, subtitle, detail,
+        def make_tool_card(row, col, index, title, subtitle, detail,
                            action=None, disabled=False):
             edge = "#343A42" if disabled else "#4A5058"
             card = tk.Frame(
@@ -2061,10 +2090,10 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 bg="#0E1115",
                 highlightbackground=edge,
                 highlightthickness=1,
-                width=250,
-                height=245,
+                width=(host_width - 24) // 2,
+                height=(host_height - 22) // 2,
             )
-            card.grid(row=0, column=col, sticky="nsew", padx=7)
+            card.grid(row=row, column=col, sticky="nsew", padx=6, pady=5)
             card.grid_propagate(False)
 
             stripe = tk.Frame(
@@ -2082,12 +2111,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 highlightthickness=0,
                 bd=0,
             )
-            icon.pack(pady=(20, 8))
+            icon.pack(pady=(5, 1))
 
             icon_col = "#5C6269" if disabled else "#D7D9D7"
             hot_col = "#676D74" if disabled else COLORS["orange"]
 
-            if col == 0:
+            if index == 0:
                 # OGG / waveform + note.
                 icon.create_line(
                     8, 37, 16, 27, 23, 43, 31, 22, 39, 39, 47, 29, 55, 36,
@@ -2098,7 +2127,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 icon.create_oval(38, 14, 48, 24, outline=hot_col, width=2)
                 icon.create_line(47, 15, 47, 39, fill=hot_col, width=2)
                 icon.create_oval(40, 35, 48, 43, fill=hot_col, outline="")
-            elif col == 1:
+            elif index == 1:
                 # MIDI / step notes.
                 for xx, yy in ((10, 37), (25, 27), (40, 18)):
                     icon.create_rectangle(
@@ -2112,7 +2141,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                         fill=icon_col,
                         width=2,
                     )
-            else:
+            elif index == 2:
                 # Model / wire cube.
                 icon.create_polygon(
                     12, 23, 31, 13, 50, 23, 31, 34,
@@ -2132,6 +2161,14 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     outline=icon_col,
                     width=2,
                 )
+
+            else:
+                # Mod Packager / exported modular ZIP.
+                icon.create_rectangle(11, 16, 51, 46, outline=hot_col, width=2)
+                icon.create_line(11, 16, 30, 7, 51, 16, fill=icon_col, width=2)
+                icon.create_line(30, 7, 30, 34, fill=icon_col, width=2)
+                icon.create_text(31, 52, text="ZIP", fill=hot_col,
+                                 font=("Bahnschrift SemiBold", 9))
 
             tk.Label(
                 card,
@@ -2155,7 +2192,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 bg="#0E1115",
                 fg="#666C73" if disabled else "#93989F",
                 font=("Bahnschrift", 8),
-                wraplength=205,
+                wraplength=max(220, (host_width - 55)//2),
                 justify="center",
             ).pack(padx=12)
 
@@ -2172,7 +2209,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 pady=7,
                 cursor="arrow" if disabled else "hand2",
             )
-            button.pack(side="bottom", pady=18)
+            button.pack(side="bottom", pady=7)
 
             if not disabled and action is not None:
                 widgets = [card, icon, button]
@@ -2213,9 +2250,13 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 "model", BASE_DIR,
                 runtime_dir=getattr(sys, "_MEIPASS", None),
             ),
+            "modpackager": editor_registry.editor_executable(
+                "modpackager", BASE_DIR,
+                runtime_dir=getattr(sys, "_MEIPASS", None),
+            ),
         }
         make_tool_card(
-            0,
+            0, 0, 0,
             "OGG MUSIC",
             ".OGG TOOLKIT",
             "Prepare and manage external OGG music for Crash Forge: Racing.",
@@ -2223,7 +2264,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             disabled=not bool(tool_paths["ogg"]),
         )
         make_tool_card(
-            1,
+            0, 1, 1,
             "CSEQ / MIDI",
             ".MIDI TOOLKIT",
             "Import MIDI, assign CTR instruments or SF2 presets and build CSEQ packages.",
@@ -2231,12 +2272,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             disabled=not bool(tool_paths["cseq"]),
         )
         make_tool_card(
-            2,
+            1, 0, 2,
             "MODEL IMPORTER",
             "CHARACTERS / KARTS / WHEELS / TRACKS",
             "Import characters, modular karts, wheels and native .LEV/.VRM tracks.",
             action=lambda: self._launch_editor_tool(tool_paths["model"]),
             disabled=not bool(tool_paths["model"]),
+        )
+        make_tool_card(
+            1, 1, 3,
+            "MOD PACKAGER",
+            "CHARACTERS / KARTS / WHEELS / TRACKS",
+            "Build, validate and export native ZIP mods for Forge Hub.",
+            action=lambda: self._launch_editor_tool(tool_paths["modpackager"]),
+            disabled=not bool(tool_paths["modpackager"]),
         )
 
         self._editor_status_label = tk.Label(
@@ -2253,8 +2302,16 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         )
 
         win.protocol("WM_DELETE_WINDOW", self._close_editor_selector)
+        win.deiconify()
         win.lift()
-        win.focus_force()
+        # Tk may relocate borderless Toplevels to display 1 while mapping.
+        # Reinforce the exact signed Win32 virtual-desktop position twice.
+        editor_geometry.enforce_native_window_position(win, x, y, width, height)
+        win.after(70, lambda: editor_geometry.enforce_native_window_position(
+            win, x, y, width, height))
+        win.after(220, lambda: editor_geometry.enforce_native_window_position(
+            win, x, y, width, height))
+        win.focus_set()
 
     def _get_native_hwnd(self):
         if os.name != "nt":
@@ -3020,6 +3077,11 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         # Preserve the exact explicitly chosen path even when the game is
         # temporarily absent, moved or its executable has not been installed.
         self.game_install_path = chosen if isinstance(chosen, str) else ""
+        if os.path.isfile(SETTINGS_FILE):
+            # Enables separately opened tool EXEs to find the same installation
+            # without probing arbitrary local game folders.
+            editor_config.save_launcher_selection(
+                SETTINGS_FILE, self.game_install_path)
         return data
 
     def _save_launcher_settings(self):
@@ -3039,6 +3101,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp, SETTINGS_FILE)
             self._launcher_settings_data = data
+            # Best-effort mirror (contains no account/session information).
+            editor_config.save_launcher_selection(
+                SETTINGS_FILE, str(self.game_install_path or ""))
             return True
         except OSError:
             return False

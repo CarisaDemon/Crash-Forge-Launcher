@@ -20,7 +20,7 @@ import wave
 import tkinter as tk
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from forge_editor_config import find_game_installation
+from forge_editor_config import selected_game_directory
 from forge_editor_geometry import initial_geometry
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
@@ -228,7 +228,7 @@ class App(tk.Tk):
         self.drum_vars: dict[int, tk.StringVar] = {}
         self.target_var = tk.StringVar(value="No level override")
         self.game_root_var = tk.StringVar(
-            value=str(find_game_installation(source_file=__file__) or "")
+            value=str(selected_game_directory(source_file=__file__) or "")
         )
         self.custom_track_targets = {}
         self.race_intro_var = tk.BooleanVar(value=False)
@@ -1163,7 +1163,7 @@ class App(tk.Tk):
         ttk.Label(game_row, text="GAME", style="Section.TLabel").pack(side="left")
         ttk.Label(game_row, textvariable=self.game_root_var,
                   width=66, style="Muted.TLabel").pack(side="left", padx=(9, 0))
-        ttk.Button(game_row, text="BROWSE GAME",
+        ttk.Button(game_row, text="LAUNCHER SETTINGS",
                    command=self._browse_custom_tracks_game).pack(side="left", padx=(8, 0))
         ttk.Button(game_row, text="REFRESH TRACKS",
                    command=self._refresh_custom_tracks).pack(side="left", padx=(6, 0))
@@ -2391,23 +2391,17 @@ class App(tk.Tk):
         messagebox.showinfo("CSEQ built", f"Wrote {len(cseq)} bytes.\n\n{filename}")
 
     def _browse_custom_tracks_game(self) -> None:
-        initial = self.game_root_var.get()
-        chosen = filedialog.askdirectory(
-            title="Select Crash Forge: Racing game folder",
-            initialdir=initial if Path(initial).is_dir() else None
+        messagebox.showinfo(
+            "Crash Forge: Racing",
+            "All editors use the game folder configured in Crash Forge Launcher > Settings."
         )
-        if chosen:
-            root = valid_game_root(chosen)
-            if root is None:
-                messagebox.showerror("Game not found",
-                                     "Select the folder containing ctr-native.exe or ctr_native.exe.")
-                return
-            self.game_root_var.set(str(root))
-            self._refresh_custom_tracks()
 
     def _refresh_custom_tracks(self) -> None:
         if not hasattr(self, "target_combo"):
             return
+        # Never retain an independent CSEQ game folder; reread Launcher Settings.
+        selected=selected_game_directory(source_file=__file__)
+        self.game_root_var.set(str(selected) if selected else "")
         tracks = discover_custom_tracks(self.game_root_var.get())
         self.custom_track_targets = {track.target_label: track for track in tracks}
         values = ["No level override"] + [

@@ -9,9 +9,11 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from forge_editor_config import find_game_installation
+from forge_editor_config import (find_game_installation, selected_game_directory,
+                                 selected_game_explanation, valid_game_root)
 from forge_editor_geometry import initial_geometry
-from crash_forge_kart_colors import install_colors, KartColorError
+from forge_model_preview import PreviewPane, TextureGallery, texture_sources_from_folder
+from crash_forge_kart_colors import install_colors, scan_palette, KartColorError
 from crash_forge_model_imports import import_mod, ImportErrorMod
 from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
 
@@ -28,12 +30,13 @@ def find_source_root():
     return None
 
 def find_installed_game():
-    # Exactly the same validated installation as in Launcher Settings.
-    # CFR_GAME_PATH can supply the selected path even when called as an EXE.
-    return str(find_game_installation(source_file=__file__) or "")
+    # The selected Launcher Settings path is authoritative, even while its
+    # executable is being updated or temporarily missing.
+    selected = selected_game_directory(source_file=__file__)
+    return str(selected) if selected else ""
 
 SOURCE_ROOT = find_source_root()
-DEFAULT_GAME_ROOT = str(SOURCE_ROOT) if SOURCE_ROOT else ""
+DEFAULT_GAME_ROOT = ""
 RETAIL = ["crash", "cortex", "tiny", "coco", "ngin", "dingo", "polar", "pura",
           "pinstripe", "papu", "roo", "joe", "ntropy", "pen", "fake", "oxide"]
 ENGINES = ["turn", "accel", "speed", "balanced"]
@@ -152,20 +155,17 @@ class App(tk.Tk):
         self.mod_mounts = {key: tk.StringVar(value="0.0") for key in
                            ["seat_x", "seat_y", "seat_z"] +
                            ["wheel_" + wheel + "_" + axis for wheel in ("fl","fr","rl","rr") for axis in "xyz"]}
-        self.mod_use_colors = tk.BooleanVar(value=False)
         self.obj_var = tk.StringVar()
         self.name_var = tk.StringVar(value="My Character")
         self.slug_var = tk.StringVar(value="my_character")
         self.fallback_var = tk.StringVar(value="coco")
         self.engine_var = tk.StringVar(value="accel")
         self.kart_var = tk.StringVar()
-        # Optional tool section: customize existing kart mods without
-        # replacing OBJ/MTL, seat, wheels, attachments or exhaust offsets.
-        candidate = TOOL_DIR.parent / "Crash Team Racing Compiled Custom Music" / "assets" / "mods" / "karts" / "ctr_cinematic_kart"
-        palette = TOOL_DIR.parent / "GameCube - Crash Nitro Kart - Characters in Karts - Coco Bandicoot" / "Kart_Color"
-        self.kart_mod_dir_var = tk.StringVar(value=str(candidate) if (candidate / "kart.ini").is_file() else "")
-        self.kart_color_dir_var = tk.StringVar(value=str(palette) if palette.is_dir() else "")
-        self.kart_color_info_var = tk.StringVar(value="Select a kart mod and a palette folder. Blue stays as the original atlas.")
+        # No hard-coded personal mods, tools, or retired assets/mods paths.
+        self.kart_mod_dir_var = tk.StringVar()
+        self.kart_color_dir_var = tk.StringVar()
+        self.kart_color_info_var = tk.StringVar(
+            value="Choose any PNG/BMP skin textures. You can rename every in-game variant.")
         # Paired CTR retail-native track assets. The game loader decides
         # when to activate a package; importing never replaces retail files.
         sample_game = find_installed_game()
@@ -186,18 +186,21 @@ class App(tk.Tk):
         self.ox_var = tk.StringVar(value="0.0")
         self.oy_var = tk.StringVar(value="0.0")
         self.oz_var = tk.StringVar(value="0.0")
-        self.game_var = tk.StringVar(value=find_installed_game() or DEFAULT_GAME_ROOT)
+        self.game_var = tk.StringVar(value=find_installed_game())
         self.output_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Ready")
         self.last_stats = None
         self.last_dest = None
         self.icon_preview = None
+        self._preview_update_job = None
         self._columns_stacked = None
         self._compact_controls = None
         self._set_windows_identity()
         self._setup_style()
         self._build_ui()
         self.game_var.trace_add("write", self._on_game_path_change)
+        for value in (self.obj_var, self.mod_obj_var, self.track_lev_var):
+            value.trace_add("write", self._schedule_model_preview)
         self._sync_output_path()
         self._update_icon_controls()
         self._show_section("home")
@@ -397,10 +400,9 @@ class App(tk.Tk):
         line.pack(fill="x", pady=(7, 3))
         ttk.Label(line, text="Game folder", style="Panel.TLabel",
                   width=15).pack(side="left")
-        ttk.Entry(line, textvariable=self.track_game_var).pack(
+        ttk.Entry(line, textvariable=self.track_game_var, state="readonly").pack(
             side="left", fill="x", expand=True, padx=(0, 8))
-        ttk.Button(line, text="Browse...", command=self._choose_track_game).pack(
-            side="right")
+        ttk.Label(line, text="(Launcher Settings)",style="Muted.TLabel").pack(side="right")
         line = ttk.Frame(tracks, style="Panel.TFrame")
         line.pack(fill="x", pady=(6, 2))
         ttk.Button(line, text="Validate Pair", command=self._validate_native_track).pack(
@@ -414,8 +416,8 @@ class App(tk.Tk):
         palette_border.pack(fill="x", pady=(0, 12))
         self.palette_card = palette_border
         self._section_title(
-            palette, "KART COLOR VARIANTS",
-            "Single OBJ and MTL. Auto-detect Blue, Red, Lime, Pink, Blank and more; save to kart.ini.")
+            palette, "KART TEXTURE VARIANTS",
+            "One native OBJ/MTL. Find any atlas color or pattern; preview and rename each skin for the game.")
         kart_row = ttk.Frame(palette, style="Panel.TFrame")
         kart_row.pack(fill="x", pady=3)
         ttk.Label(kart_row, text="Existing kart", style="Panel.TLabel", width=16).pack(side="left")
@@ -436,6 +438,9 @@ class App(tk.Tk):
         ttk.Label(palette, textvariable=self.kart_color_info_var,
                   style="Muted.TLabel", wraplength=860, justify="left").pack(
                       fill="x", anchor="w", pady=(4, 0))
+        self.kart_colors_gallery=TextureGallery(
+            palette,editable=True,on_preview=self._preview_texture)
+        self.kart_colors_gallery.pack(fill="x",pady=(6,0))
 
         columns = ttk.Frame(root)
         columns.pack(fill="both", expand=True)
@@ -572,17 +577,21 @@ class App(tk.Tk):
         mount_fields.pack(fill="x")
         for i, (key,var) in enumerate(self.mod_mounts.items()):
             self._field(mount_fields, key.replace("_"," ").title(), var, i)
-        self.mod_colors_frame = ttk.Frame(model, style="Panel.TFrame")
-        self.mod_colors_frame.pack(fill="x", pady=(12,0))
-        ttk.Checkbutton(self.mod_colors_frame, text="Import additional kart colors (optional)",
-                        variable=self.mod_use_colors).pack(anchor="w")
-        ttk.Entry(self.mod_colors_frame, textvariable=self.kart_color_dir_var).pack(fill="x", pady=4)
-        ttk.Button(self.mod_colors_frame, text="Choose color folder...",
-                   command=self._choose_kart_colors).pack(anchor="w")
+        # Texture variants live in ONE kart-only section (see palette_card).
+        # Do not duplicate the same color folder picker under Import Model.
         ttk.Label(model, text="Use the game installation selected in the Character page.",
                   style="Muted.TLabel").pack(anchor="w", pady=(10,5))
         ttk.Button(model, text="Import Model", command=self._import_mod,
                    style="Accent.TButton").pack(anchor="e", pady=(8,0))
+        self.preview_card, visual = self._card(root)
+        self.preview_card.pack(fill="x",pady=(0,12))
+        self._section_title(visual,"LIVE 3D PREVIEW",
+            "Characters / karts / wheels: OBJ + MTL textures. Tracks: LEV geometry + vertex colors.")
+        self.model_viewer = PreviewPane(visual,width=820,height=300)
+        self.model_viewer.pack(fill="x",expand=True,pady=(7,0))
+        self.preview_textures=TextureGallery(
+            visual,editable=False,on_preview=self._preview_texture)
+        self.preview_textures.pack(fill="x",pady=(8,0))
         actions = ttk.Frame(root)
         actions.pack(fill="x", pady=(14, 0))
         self.analyze_button = ttk.Button(actions, text="Analyze / Validate", command=self.analyze)
@@ -670,7 +679,7 @@ class App(tk.Tk):
         self.active_section = section
         for item in (self.home_frame, self.char_source_card, self.track_card,
                      self.palette_card, self.char_columns, self.mod_card,
-                     self._actions_frame):
+                     self.preview_card,self._actions_frame):
             item.pack_forget()
         self.section_heading.configure(text={
             "home":"", "character":"CHARACTER IMPORTER",
@@ -681,26 +690,75 @@ class App(tk.Tk):
         elif section == "character":
             self.char_source_card.pack(fill="x", pady=(0,12), after=self.section_heading)
             self.char_columns.pack(fill="both", expand=True, after=self.char_source_card)
-            self._actions_frame.pack(fill="x", pady=(14,0), after=self.char_columns)
+            self.preview_card.pack(fill="x",pady=(0,12),after=self.char_columns)
+            self._actions_frame.pack(fill="x", pady=(14,0), after=self.preview_card)
         elif section == "tracks":
             self.track_card.pack(fill="x", pady=(0,12), after=self.section_heading)
+            self.preview_card.pack(fill="x",pady=(0,12),after=self.track_card)
         else:
             self.mod_card.pack(fill="x", pady=(0,12), after=self.section_heading)
             if section == "kart":
                 self.mount_frame.pack(fill="x", pady=(10,0))
-                self.mod_colors_frame.pack(fill="x", pady=(12,0))
                 self.palette_card.pack(fill="x", pady=(0,12), after=self.mod_card)
+                self.preview_card.pack(fill="x",pady=(0,12),after=self.palette_card)
             else:
                 self.mount_frame.pack_forget()
-                self.mod_colors_frame.pack_forget()
+                self.preview_card.pack(fill="x",pady=(0,12),after=self.mod_card)
+        self._refresh_current_preview()
         self.scroll_canvas.yview_moveto(0)
         self._on_content_configure()
+
+    def _schedule_model_preview(self, *_):
+        if self._preview_update_job is not None:
+            self.after_cancel(self._preview_update_job)
+        self._preview_update_job=self.after(300,self._refresh_current_preview)
+
+    def _preview_texture(self,texture):
+        if getattr(self,"model_viewer",None) is not None:
+            self.model_viewer.set_variant(texture)
+
+    def _refresh_current_preview(self):
+        self._preview_update_job=None
+        if not hasattr(self,"model_viewer") or self.active_section=="home":
+            return
+        if self.active_section=="character":
+            source=self.obj_var.get().strip()
+            category="Character"
+        elif self.active_section=="tracks":
+            source=self.track_lev_var.get().strip()
+            category="Track"
+        else:
+            source=self.mod_obj_var.get().strip()
+            category=self.active_section.title()
+            if self.active_section=="kart" and self.kart_mod_dir_var.get().strip():
+                models=sorted(Path(self.kart_mod_dir_var.get().strip()).glob("*.obj"))
+                if models:source=str(models[0])
+        if not source or not Path(source).is_file():
+            self.model_viewer.scene=None
+            self.model_viewer.image.configure(image="",text="Choose a "+(
+                "LEV track" if category=="Track" else "native OBJ")+" to preview.")
+            self.model_viewer.detail.set("Waiting for source model.")
+            self.preview_textures.load([])
+            return
+        self.model_viewer.load(source,category=category)
+        if self.active_section=="kart":
+            self.preview_textures.pack_forget()
+            folder=Path(self.kart_color_dir_var.get().strip())
+            if folder.is_dir() and not self.kart_colors_gallery.rows:
+                self._scan_kart_colors()
+        else:
+            self.preview_textures.pack(fill="x",pady=(8,0))
+            self.preview_textures.load(texture_sources_from_folder(Path(source).parent))
+        if category=="Track":
+            self.model_viewer.detail.set(self.model_viewer.detail.get()+
+                " • VRM atlas decoding is not yet available in preview.")
 
     def _choose_mod_obj(self):
         path = filedialog.askopenfilename(title="Choose modular OBJ",
                   filetypes=[("Wavefront model", "*.obj"), ("All files", "*.*")])
         if path:
             self.mod_obj_var.set(path)
+            self._refresh_current_preview()
             if self.mod_id_var.get() == "my_custom_mod":
                 self.mod_id_var.set(clean_slug(Path(path).stem))
 
@@ -709,9 +767,9 @@ class App(tk.Tk):
         if kind not in ("kart", "wheels"):
             return
         try:
-            root = self._game_root_from_value()
+            root = self._validated_game_root()
             if root is None:
-                raise ImportErrorMod("Choose a game folder before importing.")
+                return
             obj = self.mod_obj_var.get().strip()
             slug = self.mod_id_var.get().strip()
             target = root / "mods" / slug
@@ -723,8 +781,15 @@ class App(tk.Tk):
                         self.mod_scale_var.get(),
                         {a: v.get() for a,v in self.mod_offsets.items()},
                         {a: v.get() for a,v in self.mod_mounts.items()} if kind == "kart" else {},
-                        self.kart_color_dir_var.get() if kind == "kart" and self.mod_use_colors.get() else None,
-                        replace=replacing)
+                        None, replace=replacing)
+            # New and existing karts use the SAME texture gallery. Texture
+            # names from its editable rows become actual [colors] INI keys.
+            if kind == "kart" and self.kart_colors_gallery.rows:
+                choices=self.kart_colors_gallery.selected_names()
+                if choices:
+                    install_colors(result["folder"],
+                                   self.kart_color_dir_var.get().strip(),
+                                   variants=choices)
             self.last_dest = Path(result["folder"])
             self.status_var.set(kind.title() + " imported")
             messagebox.showinfo(APP_TITLE, "Mod installed successfully:\n" + result["folder"])
@@ -759,11 +824,8 @@ class App(tk.Tk):
             self._validate_native_track()
 
     def _choose_track_game(self):
-        path = filedialog.askdirectory(
-            title="Installed Crash Forge Racing game folder",
-            initialdir=self.track_game_var.get().strip() or str(TOOL_DIR.parent))
-        if path:
-            self.track_game_var.set(path)
+        messagebox.showinfo(APP_TITLE,
+            "Change the game installation in Crash Forge Launcher > Settings.")
 
     def _validate_native_track(self):
         try:
@@ -812,55 +874,93 @@ class App(tk.Tk):
             messagebox.showerror(APP_TITLE, str(exc))
 
     def _choose_kart_mod(self):
-        initial = self.kart_mod_dir_var.get().strip() or str(TOOL_DIR.parent)
-        selected = filedialog.askdirectory(title="Choose existing kart mod (contains kart.ini)",
-                                          initialdir=initial)
-        if selected:
-            self.kart_mod_dir_var.set(selected)
+        """Choose only an existing kart inside the launcher-selected mods root."""
+        root=self._game_root_from_value()
+        if root is None:
+            messagebox.showerror(APP_TITLE,
+                "Select your game installation in Crash Forge Launcher > Settings.")
+            return
+        mods=root/"mods"
+        if not mods.is_dir():
+            messagebox.showerror(APP_TITLE, "Game mods folder missing: "+str(mods))
+            return
+        selected=filedialog.askdirectory(
+            title="Existing kart mod inside selected Crash Forge game",
+            initialdir=str(mods))
+        if not selected:return
+        folder=Path(selected).resolve()
+        if (not folder.is_relative_to(mods.resolve()) or
+                not (folder/"kart.ini").is_file()):
+            messagebox.showerror(APP_TITLE,
+                "Choose a kart mod inside "+str(mods)+" containing kart.ini.")
+            return
+        self.kart_mod_dir_var.set(str(folder))
+        self._refresh_current_preview()
+        if self.kart_color_dir_var.get().strip():
             self._scan_kart_colors()
 
     def _choose_kart_colors(self):
-        selected = filedialog.askdirectory(title="Choose folder with colored textures",
-                                          initialdir=self.kart_color_dir_var.get().strip() or str(TOOL_DIR))
+        selected=filedialog.askdirectory(
+            title="Choose PNG/BMP kart texture atlases",
+            initialdir=self.kart_color_dir_var.get().strip() or
+                        str(Path(self.mod_obj_var.get()).parent
+                            if self.mod_obj_var.get().strip() else Path.home()))
         if selected:
             self.kart_color_dir_var.set(selected)
             self._scan_kart_colors()
 
     def _scan_kart_colors(self):
+        """Detect ANY atlas filenames. Show previews and editable game names."""
         try:
-            result = install_colors(self.kart_mod_dir_var.get().strip(),
-                                    self.kart_color_dir_var.get().strip(), dry_run=True)
-            names = ", ".join(name.title() for name in result["variants"])
-            note = "Default Blue reused; no duplicate." if result["skipped_duplicate_blue"] else "Default atlas reused."
-            self.kart_color_info_var.set(
-                f"{len(result['variants'])} colors: {names}. {note} "
-                f"{len(result['new_textures'])} new textures to install.")
-            self.status_var.set("Kart colors ready")
+            folder=self.kart_color_dir_var.get().strip()
+            textures=scan_palette(folder)
+            self.kart_colors_gallery.load(textures)
+            info=(str(len(textures))+" textures detected. "
+                  "Set in-game names beside each thumbnail, tick variants "
+                  "to include, then import/apply. Maximum 12 skins including original.")
+            kart=self.kart_mod_dir_var.get().strip()
+            if kart and (Path(kart)/"kart.ini").is_file():
+                obj=sorted(Path(kart).glob("*.obj"))
+                if obj:self.model_viewer.load(obj[0],category="Kart")
+            self.kart_color_info_var.set(info)
+            self.status_var.set("Kart textures detected")
         except (KartColorError, OSError, UnicodeError) as exc:
             self.kart_color_info_var.set(str(exc))
-            self.status_var.set("Color scan needs attention")
+            self.status_var.set("Texture scan needs attention")
 
     def _apply_kart_colors(self):
+        """Apply selected named variants without modifying the native OBJ/MTL."""
         try:
-            preview = install_colors(self.kart_mod_dir_var.get().strip(),
-                                     self.kart_color_dir_var.get().strip(), dry_run=True)
+            root=self._validated_game_root()
+            if root is None:return
+            folder=Path(self.kart_mod_dir_var.get().strip()).resolve()
+            if (not folder.is_relative_to((root/"mods").resolve()) or
+                    not (folder/"kart.ini").is_file()):
+                raise KartColorError("Choose an installed kart inside the selected game mods folder.")
+            chosen=self.kart_colors_gallery.selected_names()
+            if not chosen:
+                raise KartColorError("Scan and select at least one kart skin texture.")
+            preview=install_colors(
+                folder,self.kart_color_dir_var.get().strip(),
+                variants=chosen,dry_run=True)
+            names=", ".join(preview["variants"])
             if not messagebox.askyesno(APP_TITLE,
-                "Update the colors for this kart?\n\n" + preview["kart"] +
-                "\n\nIts OBJ, MTL, original blue texture, and attachment offsets stay unchanged."):
+                "Apply texture variants to this kart?\n\n" + names +
+                "\n\nOnly selected atlases and kart.ini change. "
+                "The original OBJ, MTL and attachment offsets stay untouched."):
                 return
-            result = install_colors(self.kart_mod_dir_var.get().strip(),
-                                    self.kart_color_dir_var.get().strip())
+            result=install_colors(
+                folder,self.kart_color_dir_var.get().strip(),variants=chosen)
             self.kart_color_info_var.set(
-                "INSTALLED: " + ", ".join(name.title() for name in result["variants"]) +
-                ". Original geometry preserved; kart.ini backed up.")
-            self.status_var.set("Kart colors installed")
+                "Installed "+str(len(result["variants"]))+" skin variants: "+
+                ", ".join(result["variants"])+". kart.ini backup saved.")
+            self.status_var.set("Kart textures installed")
             messagebox.showinfo(APP_TITLE,
-                                "Kart colors installed successfully.\n\n" +
-                                result["kart"] +
-                                "\n\nRestart the game to discover the new colors.")
-        except (KartColorError, OSError, UnicodeError) as exc:
+                "Textures installed in:\n"+result["kart"]+
+                "\n\nRestart the game to load the custom names.")
+        except (KartColorError, OSError, UnicodeError, ValueError) as exc:
             self.kart_color_info_var.set(str(exc))
-            messagebox.showerror(APP_TITLE, str(exc))
+            messagebox.showerror(APP_TITLE,str(exc))
 
     def _on_content_configure(self, _event=None):
         self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all"))
@@ -961,26 +1061,9 @@ class App(tk.Tk):
         self.slug_var.set(clean_slug(self.name_var.get()))
 
     def _game_root_from_value(self, value=None):
-        raw = (self.game_var.get() if value is None else value).strip().strip('"')
-        if not raw:
-            return None
-
-        path = Path(raw).expanduser()
-
-        if path.suffix.lower() == ".exe":
-            path = path.parent
-
-        parts = [part.lower() for part in path.parts]
-        if len(parts) >= 3 and parts[-3:] == ["assets", "mods", "racers"]:
-            path = path.parents[2]
-        elif len(parts) >= 2 and parts[-2:] == ["assets", "mods"]:
-            path = path.parents[1]
-        elif path.name.lower() == "mods":
-            path = path.parent
-        elif path.name.lower() == "assets":
-            path = path.parent
-
-        return path
+        # Never probe arbitrary C: paths, source roots or retired assets/mods.
+        # All four editors use exactly Launcher Settings.
+        return selected_game_directory(source_file=__file__)
 
     def _mods_path_from_game(self, value=None):
         root = self._game_root_from_value(value)
@@ -995,47 +1078,18 @@ class App(tk.Tk):
 
     def _validated_game_root(self):
         root = self._game_root_from_value()
-        if root is None:
-            messagebox.showerror(APP_TITLE, "Choose the Crash Forge Racing game folder or ctr_native.exe.")
+        if valid_game_root(root) is None:
+            messagebox.showerror(APP_TITLE, selected_game_explanation(root)+
+                "\n\nChange the selected folder in Launcher > Settings.")
             return None
-
-        if not root.is_dir():
-            messagebox.showerror(APP_TITLE, f"Game folder not found:\n{root}")
-            return None
-
-        has_exe = (root / "ctr_native.exe").is_file() or (root / "ctr-native.exe").is_file()
-        has_source = ((root / "CMakeLists.txt").is_file() and
-                      (root / "game").is_dir() and
-                      (root / "platform").is_dir())
-        has_assets = (root / "assets").is_dir()
-
-        if not (has_exe or has_source or has_assets):
-            messagebox.showerror(
-                APP_TITLE,
-                "That folder does not look like Crash Forge Racing.\n\n"
-                "Choose the folder containing ctr_native.exe, or select ctr_native.exe directly.")
-            return None
-
         return root
 
     def choose_game_folder(self):
-        initial = self._game_root_from_value()
-        path = filedialog.askdirectory(
-            title="Choose Crash Forge Racing game folder",
-            initialdir=str(initial) if initial and initial.exists() else None)
-        if path:
-            self.game_var.set(path)
+        messagebox.showinfo(APP_TITLE,
+            "The game directory is configured in Crash Forge Launcher > Settings.")
 
     def choose_game_exe(self):
-        initial = self._game_root_from_value()
-        path = filedialog.askopenfilename(
-            title="Choose ctr_native.exe",
-            initialdir=str(initial) if initial and initial.exists() else None,
-            filetypes=[("Crash Forge Racing", "ctr_native.exe"),
-                       ("Executable", "*.exe"),
-                       ("All files", "*.*")])
-        if path:
-            self.game_var.set(path)
+        self.choose_game_folder()
 
     def choose_icon(self):
         path = filedialog.askopenfilename(title="Choose custom roster icon",

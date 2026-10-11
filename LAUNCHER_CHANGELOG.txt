@@ -1,5 +1,13 @@
 Crash Forge: Racing Launcher
 
+v0.3.49
+- Add a fourth native Editor tool: Mod Packager for Character, Kart, Wheels and Track ZIPs.
+- Add interactive OBJ/LEV 3D previews and texture thumbnails to both model tools.
+- Unify kart variants: arbitrary image names, editable in-game labels, up to 12 skins.
+- All editor tools follow the single installation folder saved in Launcher Settings.
+- Keep Editor selector and companion EXEs on the launcher's actual monitor.
+- Reconnect Forge Hub accounts automatically after transient service interruptions.
+
 v0.3.48
 - PLAY is greyed out when any required official game file is missing or empty, not only the ISO.
 - Show missing file names and automatically re-enable PLAY when they are restored.

@@ -11,6 +11,7 @@ EDITORS = {
     "ogg": "CrashForgeOGGToolkit.exe",
     "cseq": "CrashForgeCSEQToolkit.exe",
     "model": "CrashForgeModelImporter.exe",
+    "modpackager": "CrashForgeModPackager.exe",
 }
 
 def editor_executable(tool, launcher_dir, *, override="", runtime_dir=None):

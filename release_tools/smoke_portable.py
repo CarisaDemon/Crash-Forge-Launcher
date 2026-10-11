@@ -139,10 +139,11 @@ def main():
         "Bundled importer requires a system Python install: "+result.stderr[-1000:])
     print("PASS bundled Model Importer with NO Python/pip/developer PATH")
 
-    # All three shipped editors must be true Windows GUI executables.
+    # All four shipped editors must be true Windows GUI executables.
     # No installed Python/PIP or terminal should be needed.
     tools = PORTABLE / "_internal" / "editor_tools"
-    for filename in ("CrashForgeOGGToolkit.exe", "CrashForgeCSEQToolkit.exe"):
+    for filename in ("CrashForgeOGGToolkit.exe", "CrashForgeCSEQToolkit.exe",
+                     "CrashForgeModPackager.exe"):
         packaged = tools / filename
         assert packaged.is_file(), "Bundled editor missing: " + filename
         assert_windows_gui_subsystem(packaged)
