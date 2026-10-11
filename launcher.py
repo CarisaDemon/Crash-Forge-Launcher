@@ -1471,10 +1471,17 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     return
             except Exception:
                 pass
-        self._account_dialog = open_account_dialog(
-            self, self.account_client,
-            on_change=lambda: self._paint_floating_header(),
-        )
+        try:
+            self._account_dialog = open_account_dialog(
+                self, self.account_client,
+                on_change=lambda: self._paint_floating_header(),
+            )
+        except Exception as exc:
+            # A failed optional account dialog must never lock PLAY, MODS,
+            # the window-close controls, or the rest of the launcher.
+            self._account_dialog = None
+            self.status_label.configure(
+                text=("Account window could not open: " + str(exc))[:200])
 
     def _open_forge_hub_website(self):
         """Open the official Forge Hub website without leaving the launcher."""

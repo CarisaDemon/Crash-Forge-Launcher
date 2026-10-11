@@ -28,11 +28,18 @@ class AccountDialog:
         self.status = tk.StringVar(value="Connect your existing Forge Hub account.")
         self.window = tk.Toplevel(parent)
         win = self.window
+        # A Windows-managed, non-modal window is essential here: the
+        # borderless launcher is not a safe parent for Tk modal grab_set.
+        # The previous override-redirect+grab combination could trap all
+        # mouse input behind an invisible child window and prevent closing.
         win.withdraw()
-        win.overrideredirect(True)
+        win.title("Crash Forge: Racing - Forge Hub Account")
         win.configure(bg=ORANGE)
         win.resizable(False, False)
-        win.transient(parent)
+        try:
+            win.iconphoto(False, parent._app_icon)
+        except (AttributeError, tk.TclError, TypeError):
+            pass
         width = min(650, max(480, win.winfo_screenwidth() - 35))
         height = min(630, max(430, win.winfo_screenheight() - 65))
         x = max(0, parent.winfo_rootx() + (parent.winfo_width() - width)//2)
@@ -77,12 +84,11 @@ class AccountDialog:
                  font=("Bahnschrift", 9), wraplength=590,
                  padx=10, pady=9).pack(fill="x")
         win.protocol("WM_DELETE_WINDOW", self.close)
-        win.deiconify()
-        try:
-            win.grab_set()
-        except tk.TclError:
-            pass
         self._render()
+        win.deiconify()
+        win.lift()
+        # Never grab mouse or keyboard. Both parent and Account remain
+        # independently closeable even if the account service stalls.
         win.after(125, self._pump)
         if client.signed_in:
             self._run(client.profile, self._signed_in)
