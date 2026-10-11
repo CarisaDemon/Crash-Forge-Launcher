@@ -15,6 +15,7 @@ import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_launcher_integrity as launcher_integrity
 import forge_news_history as news_history
+import forge_game_news as game_news
 import forge_iso_integrity as iso_integrity
 from forge_version_dialog import ask_play_outdated
 from forge_dialogs import ask_mod_install, ask_game_update
@@ -44,6 +45,8 @@ class ForgeLiveMixin:
         self.remote_mods = []
         self.remote_news = []
         self.github_release_news = []
+        self.game_news_history = []  # The game's *own* GitHub repository.
+        self._unread_game_announcement = None
         # Persistent, append-only history across launcher updates and offline use.
         self.launcher_news_history = news_history.local_publications(
             self._forge_base_dir())
@@ -70,7 +73,7 @@ class ForgeLiveMixin:
         screenshot_preview = os.environ.get("CFR_SCREENSHOT_PREVIEW") == "1"
         # A screenshot preview never checks the game ISO, polls releases,
         # downloads packages or stages an automatic launcher update.
-        if not screenshot_preview:
+        if not screenshot_preview and self.game_install_path:
             try:
                 iso_integrity.start_background_check(
                     self.game_install_path, "launcher_start")
@@ -85,11 +88,10 @@ class ForgeLiveMixin:
             return
         if self.online_cfg.get("feed_url"):
             self._reload_live_source()
-        if getattr(self, "_auto_recovered_game_path", False):
-            self.status_label.configure(
-                text="Detected an existing ctr-native.exe and recovered its install folder.")
+        # Game folders are never discovered or replaced automatically.
+        # The selected Settings path remains authoritative.
         self.after(1300, self._refresh_news_history)
-        self.after(3600000, self._scheduled_news_history_check)
+        self.after(600000, self._scheduled_news_history_check)
         self.after(650, self._check_launcher_integrity)
         self.after(1600, self._startup_release_check)
         self.after(2700, self._startup_launcher_update_check)
@@ -119,7 +121,11 @@ class ForgeLiveMixin:
         os.replace(tmp, path)
 
     def _primary_game_action(self):
-        """PLAY if installed; INSTALL only when an official checked game ZIP exists."""
+        """PLAY if installed; INSTALL only at a manually selected game folder."""
+        if not self.game_install_path:
+            self.status_label.configure(
+                text="Choose the game install folder in Settings before continuing.")
+            return
         status = services.real_game_status(self.game_install_path)
         if status["installed"]:
             self._play_installed_game()
@@ -200,32 +206,62 @@ class ForgeLiveMixin:
         return result
 
     def _refresh_news_history(self):
-        """Refresh NEWS in a worker; never confuse public articles with updates."""
+        """Fetch launcher and game NEWS independently; never install anything.
+
+        Two official pinned GitHub repositories. Neither can modify the
+        other's version, ZIP or updater state. Off-UI thread, quiet retry.
+        """
         if getattr(self, "_news_refresh_busy", False):
             return
         self._news_refresh_busy = True
 
         def worker():
+            # A GitHub API failure in ONE project never removes articles
+            # already available from the OTHER project.
             try:
-                # The updater's existing strict URL allowlist and response limit
-                # are reused; this call does NOT stage or download a launcher.
                 raw = launcher_updates._open_json(launcher_updates.RELEASES_API)
                 published, pictures = news_history.parse_github_history(raw)
-                if not published:
-                    raise ValueError("No published launcher releases")
-                merged = news_history.save_history(published, self._forge_base_dir())
-                news_history.sync_release_artwork(pictures)
-                self.online_queue.put(("news_history_ok", merged))
+                if published:
+                    merged = news_history.save_history(
+                        published, self._forge_base_dir())
+                    news_history.sync_release_artwork(pictures)
+                    self.online_queue.put(("news_history_ok", merged))
             except (ValueError, OSError, TypeError) as error:
                 self.online_queue.put(("news_history_error", str(error)))
+            try:
+                raw_game = releases._read_json(game_news.GAME_API_URL)
+                published_game = game_news.parse_public_game_releases(raw_game)
+                self.online_queue.put(("game_news_ok", published_game))
+            except (ValueError, OSError, TypeError) as error:
+                self.online_queue.put(("game_news_error", str(error)))
+            finally:
+                self.online_queue.put(("news_refresh_done", None))
 
         threading.Thread(target=worker, daemon=True,
-                         name="ForgeReleaseNewsHistory").start()
+                         name="ForgeIndependentNewsPoll").start()
 
     def _scheduled_news_history_check(self):
-        """Add future publications without removing or duplicating older ones."""
+        """Ten-minute release NEWS polling, separate from updater cadence."""
         self._refresh_news_history()
-        self.after(3600000, self._scheduled_news_history_check)
+        self.after(600000, self._scheduled_news_history_check)
+
+    def _refresh_game_news_indicator(self):
+        """A tiny orange NEW label, with NO popups, sound or focus stealing."""
+        self._unread_game_announcement = game_news.latest_unread_game(
+            getattr(self, "game_news_history", []))
+        unread = self._unread_game_announcement is not None
+        label = getattr(self, "news_game_indicator", None)
+        if label is not None:
+            label.configure(text="â— NEW GAME RELEASE" if unread else "",
+                            cursor="hand2" if unread else "arrow")
+        tab = getattr(self, "_dashboard_buttons", {}).get("NEWS")
+        if tab is not None:
+            tab.configure(text="NEWS  â—" if unread else "NEWS")
+
+    def _acknowledge_game_news(self, event=None):
+        unread = getattr(self, "_unread_game_announcement", None)
+        if unread and game_news.mark_game_seen(unread["tag"]):
+            self._refresh_game_news_indicator()
 
     def _render_real_news(self):
         """Scrollable release archive: one article per published version."""
@@ -236,18 +272,23 @@ class ForgeLiveMixin:
             child.destroy()
         self._news_art_photos = {}
 
-        history = news_history.merge_history(
+        launcher_history = news_history.merge_history(
             news_history.local_publications(self._forge_base_dir()),
             getattr(self, "launcher_news_history", []))
-        self.launcher_news_history = history
+        self.launcher_news_history = launcher_history
+        history = game_news.combined_news(
+            launcher_history, getattr(self, "game_news_history", []))
 
-        additional = self.github_release_news + self.remote_news
+        # Live community announcements do not affect either project's updater.
+        additional = self.remote_news
         for index, item in enumerate(history):
             version = item["version"]
-            # A publication keeps its illustration even after newer posts arrive.
-            is_featured = (index < 2 or
-                           bool(news_history.artwork_file(
-                               self._forge_base_dir(), version)))
+            is_game = item.get("source") == "GAME"
+            # Game releases have independent text-only cards until they ship
+            # their own art: never show a launcher illustration as game art.
+            is_featured = (not is_game and
+                           (index < 2 or bool(news_history.artwork_file(
+                               self._forge_base_dir(), version))))
             row = Frame(self.news_rows, bg="#111419",
                         highlightbackground="#30363E", highlightthickness=1)
             row.pack(fill="x", pady=(0, 9), padx=1)
@@ -298,9 +339,9 @@ class ForgeLiveMixin:
 
             body = Frame(row, bg="#111419")
             body.pack(fill="x", padx=13, pady=(9, 11))
-            caption = ("LATEST PUBLICATION" if index == 0 else
-                       "PREVIOUS PUBLICATION" if index == 1 else
-                       "RELEASE HISTORY  /  v" + version)
+            caption = (("GAME  /  " if is_game else "LAUNCHER  /  ") +
+                       ("LATEST RELEASE" if index == 0 else
+                        "RELEASE HISTORY  /  " + item["display_version"]))
             Label(body, text=caption, bg="#111419", fg="#F49A54",
                   font=("Bahnschrift SemiBold", 8), anchor="w"
                   ).pack(fill="x", pady=(0, 5))
@@ -311,7 +352,7 @@ class ForgeLiveMixin:
             notes = item.get("notes", [])
             if notes:
                 summary = "\n".join("• " + str(note) for note in
-                                    notes[:4 if is_featured else 2])
+                                    notes[:4 if (is_featured or is_game) else 2])
             else:
                 summary = "Read the full release notes on GitHub."
             Label(body, text=summary,
@@ -346,14 +387,18 @@ class ForgeLiveMixin:
                   font=("Bahnschrift", 8), justify="left",
                   wraplength=415, anchor="w"
                   ).pack(fill="x", padx=12, pady=(4, 10))
+        self._refresh_game_news_indicator()
         if hasattr(self, "_resize_news_content"):
             self._resize_news_content()
         if hasattr(self, "hero_canvas"):
             self._paint_hero()
 
     def _open_all_news(self):
-        """Show chronological launcher publications, not just one news item."""
-        webbrowser.open(news_history.GITHUB_RELEASES)
+        """Both projects keep separate links; NEWS already combines the posts."""
+        selector = getattr(self, "_select_dashboard_tab", None)
+        if selector is not None:
+            selector("NEWS")
+        self._acknowledge_game_news()
 
     def _refresh_hub_source_status(self):
         label = getattr(self, "hub_source_label", None)
@@ -424,13 +469,19 @@ class ForgeLiveMixin:
             except queue.Empty:
                 break
             if event == "news_history_ok":
-                self._news_refresh_busy = False
                 self.launcher_news_history = news_history.merge_history(
                     self.launcher_news_history, data)
                 self._render_real_news()
-            elif event == "news_history_error":
+            elif event == "game_news_ok":
+                # Game NEWS is metadata only: separate repository, ZIP,
+                # version and updater. No automatic game/launcher downloads.
+                self.game_news_history = data
+                self._render_real_news()
+            elif event == "news_refresh_done":
                 self._news_refresh_busy = False
-                # Local archive remains available if GitHub is down.
+            elif event in ("news_history_error", "game_news_error"):
+                # Retain the unaffected project's existing NEWS.
+                pass
             elif event == "feed_ok":
                 url, feed, news, mods = data
                 self.online_busy = False
@@ -787,7 +838,7 @@ class ForgeLiveMixin:
             self.status_label.configure(text="Checking official GitHub Releases...")
         def worker():
             try:
-                metadata = releases.fetch_latest_release()
+                metadata = releases.fetch_latest_release(allow_prerelease=True)
                 self.online_queue.put(("release_ok", (metadata, manual, request_install)))
             except Exception as exc:
                 self.online_queue.put(("release_error", (str(exc), manual)))
@@ -798,16 +849,9 @@ class ForgeLiveMixin:
         self.latest_game_release = release
         self._update_primary_game_button()
         self.release_last_check = time.time()
-        # News is added only for an actual official Windows game release.
+        # The game NEWS fetch owns game articles independently. Never insert
+        # an extra duplicate card during a manual game update check.
         self.github_release_news = []
-        if release and release.get("asset"):
-            self.github_release_news = [{
-                "category": "GITHUB GAME RELEASE",
-                "title": "Crash Forge: Racing v" + release["version"],
-                "date": release["published_at"][:10],
-                "description": release["notes"][:450],
-                "url": release["url"],
-            }]
         self._render_real_news()
         if release is None:
             result = "No published stable Releases on GitHub"
@@ -840,6 +884,10 @@ class ForgeLiveMixin:
                 self._confirm_release_install(release)
 
     def _confirm_release_install(self, release):
+        if not self.game_install_path:
+            self.status_label.configure(
+                text="Select a game installation folder in Settings before updating.")
+            return
         if self.game_update_busy or self.mod_download_busy:
             self.status_label.configure(text="Wait for the current verified transfer to finish.")
             return
@@ -973,7 +1021,15 @@ class ForgeLiveMixin:
         except Exception:
             pass  # Even verifier failures cannot stop offline PLAY.
         try:
-            subprocess.Popen([state["exe_path"]], cwd=self.game_install_path)
+            # The native game may be a CONSOLE-subsystem binary. Suppress
+            # the command window while preserving its normal SDL graphics.
+            hidden = (subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+            subprocess.Popen([state["exe_path"]],
+                             cwd=self.game_install_path,
+                             creationflags=hidden,
+                             stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
             self.status_label.configure(text="Started installed Crash Forge game.")
         except OSError as exc:
             self.status_label.configure(text="Could not start the game: " + str(exc))

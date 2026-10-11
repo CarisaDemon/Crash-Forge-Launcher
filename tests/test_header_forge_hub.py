@@ -32,10 +32,10 @@ class HeaderForgeHubTests(unittest.TestCase):
     def test_existing_mods_and_editor_remain_working(self):
         self.assertIn('lambda e: self._show_editor_selector()',SOURCE)
         self.assertIn('self._show_forge_hub',SOURCE)
-        self.assertIn('action=(lambda: self._launch_editor_tool(model_tool))',SOURCE)
+        self.assertIn('self._launch_editor_tool(tool_paths["model"])',SOURCE)
 
     def test_release_tag(self):
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(),"0.3.44")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(),"0.3.45")
 
 
 if __name__=="__main__":

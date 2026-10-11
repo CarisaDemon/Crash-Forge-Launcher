@@ -366,7 +366,9 @@ def read_mod(game_path, kind: str, slug: str, *, legacy=False):
 
 
 def scan_installed(game_path):
-    """List unified web-ID mods + untouched legacy category folders."""
+    """List mods only from the user-selected game folder; never cwd."""
+    if not game_path:
+        return []
     root=game_mods(game_path)
     old_root=legacy_game_mods(game_path)
     results={}

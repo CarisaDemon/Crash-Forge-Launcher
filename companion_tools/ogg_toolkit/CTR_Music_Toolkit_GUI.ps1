@@ -1023,6 +1023,29 @@ $form.Text = "Crash Forge OGG Toolkit"
 $form.StartPosition = "CenterScreen"
 $form.MinimumSize = New-Object System.Drawing.Size(920,600)
 $form.Size = New-Object System.Drawing.Size(1180,760)
+# Native Windows form: start on the monitor occupied by the launcher,
+# not WinForms CenterScreen (which otherwise chooses the primary display).
+$workarea = $env:CFR_EDITOR_WORKAREA
+if ($workarea -match '^(-?\d+),(-?\d+),(-?\d+),(-?\d+)$') {
+    try {
+        $areaLeft = [int]$Matches[1]
+        $areaTop = [int]$Matches[2]
+        $areaRight = [int]$Matches[3]
+        $areaBottom = [int]$Matches[4]
+        if (($areaRight -gt $areaLeft) -and ($areaBottom -gt $areaTop) -and
+            ($areaRight - $areaLeft -le 16384) -and
+            ($areaBottom - $areaTop -le 16384)) {
+            $w = [Math]::Min(1180,$areaRight-$areaLeft)
+            $h = [Math]::Min(760,$areaBottom-$areaTop)
+            $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+            $form.Size = New-Object System.Drawing.Size($w,$h)
+            $form.Location = New-Object System.Drawing.Point(
+                ($areaLeft+[int][Math]::Floor(($areaRight-$areaLeft-$w)/2)),
+                ($areaTop+[int][Math]::Floor(($areaBottom-$areaTop-$h)/2))
+            )
+        }
+    } catch {}
+}
 $form.BackColor = $C_BG
 $form.ForeColor = $C_TEXT
 $form.Font = New-Object System.Drawing.Font("Bahnschrift",9)

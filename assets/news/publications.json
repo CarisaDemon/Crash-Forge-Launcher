@@ -3,6 +3,21 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.45",
+      "title": "BIG UPDATE — Editors, Monitors & Independent NEWS",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.45",
+      "notes": [
+        "Editor opens OGG, CSEQ and Model Importer EXEs correctly, without old batch files.",
+        "All editor windows open on the launcher's monitor; no visible command consoles.",
+        "The game install directory can only be changed manually in Settings.",
+        "Game and Launcher news appear together, but use independent versions, repositories and ZIPs.",
+        "A small new game release indicator updates silently every ten minutes.",
+        "Experimental game updates remain optional, with no automatic downloads.",
+        "Portable Windows launcher and editors need no installed Python."
+      ]
+    },
+    {
       "version": "0.3.44",
       "title": "Music Toolkits: Custom Tracks & Portable Editors",
       "date": "2026-10-11",

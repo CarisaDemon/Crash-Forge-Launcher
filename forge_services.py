@@ -19,7 +19,8 @@ import forge_modpacks
 import forge_mod_manager as mod_manager
 from datetime import datetime
 
-DEFAULT_GAME_PATH = r"C:\Crash Team Racing\Crash Team Racing Compiled Custom Music"
+# No hard-coded game location: only an explicit selection in Launcher Settings.
+DEFAULT_GAME_PATH = ""
 MAX_FEED_BYTES = 1024 * 1024
 MAX_MOD_BYTES = 1024 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
@@ -188,6 +189,9 @@ def clean_mods(feed):
 
 
 def real_game_status(game_path):
+    if not isinstance(game_path, (str, os.PathLike)) or not os.fspath(game_path):
+        return {"installed": False, "exe_path": "",
+                "detail": "Choose your game folder in Settings"}
     exe = os.path.join(game_path, "ctr-native.exe")
     if not os.path.isfile(exe):
         return {"installed": False, "exe_path": exe, "detail": "No ctr-native.exe found"}

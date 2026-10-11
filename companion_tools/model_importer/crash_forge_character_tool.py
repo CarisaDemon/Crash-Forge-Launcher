@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from forge_editor_config import find_game_installation
+from forge_editor_geometry import initial_geometry
 from crash_forge_kart_colors import install_colors, KartColorError
 from crash_forge_model_imports import import_mod, ImportErrorMod
 from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
@@ -137,6 +138,9 @@ class App(tk.Tk):
         super().__init__()
         self.title(f"{APP_TITLE}  •  v{APP_VERSION}")
         self.geometry("1060x800")
+        editor_geometry = initial_geometry(1060, 800)
+        if editor_geometry:
+            self.geometry(editor_geometry)
         self.minsize(640, 520)
         self.configure(bg=BG)
         self.active_section = "home"

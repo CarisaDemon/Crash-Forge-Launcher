@@ -153,8 +153,11 @@ def _trusted_asset(asset):
     return {"name": name, "url": url, "size": size, "sha256": checksum}
 
 
-def parse_release(data):
-    if not isinstance(data, dict) or data.get("draft") or data.get("prerelease"):
+def parse_release(data, *, allow_prerelease=False):
+    # Experimental game releases are public when marked prerelease, but must
+    # still have the same verified Windows package and user-confirmed install.
+    if (not isinstance(data, dict) or data.get("draft") or
+            (data.get("prerelease") and not allow_prerelease)):
         return None
     tag = str(data.get("tag_name") or "").strip()
     url = str(data.get("html_url") or "")
@@ -191,11 +194,11 @@ def parse_release(data):
     }
 
 
-def fetch_latest_release():
-    """Find the newest official Windows game release, not unrelated tool tags.
+def fetch_latest_release(*, allow_prerelease=False):
+    """Find official Windows game releases only, independently of launcher.
 
-    If only website/launcher releases exist, return the newest stable
-    metadata with no Windows package rather than claiming a game update.
+    Experimental published builds are opt-in and can be selected by the GUI
+    without ever auto-downloading or switching launcher versions.
     """
     entries = _read_json(RELEASE_LIST_API_URL)
     if entries is None:
@@ -204,10 +207,11 @@ def fetch_latest_release():
         raise ReleaseError("Invalid GitHub Releases listing.")
     releases_found = []
     for item in entries[:30]:
-        if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+        if (not isinstance(item, dict) or item.get("draft") or
+                (item.get("prerelease") and not allow_prerelease)):
             continue
         try:
-            candidate = parse_release(item)
+            candidate = parse_release(item, allow_prerelease=allow_prerelease)
         except ReleaseError:
             continue
         if candidate:
@@ -266,6 +270,8 @@ def _expected_digest(release):
 
 
 def game_installed_version(game_path):
+    if not game_path:
+        return None
     marker = os.path.join(game_path, "forge_release_state.json")
     try:
         with open(marker, encoding="utf-8") as f:
@@ -350,6 +356,11 @@ def install_game_release(release, game_path, progress=None):
     Only replace files explicitly in the ZIP, preserve user-created folders.
     The caller MUST obtain explicit confirmation before invoking this function.
     """
+    # Never accept an empty install directory. This check must happen before
+    # release checksum retrieval or the game-running/process check.
+    if not isinstance(game_path, (str, os.PathLike)) or not os.fspath(game_path):
+        raise ReleaseError(
+            "Choose a game installation folder in Launcher Settings before installing.")
     if not isinstance(release, dict) or not release.get("verified_package"):
         raise ReleaseError("Only a Windows release with SHA-256 may be installed.")
     if not parse_version(release.get("version")):

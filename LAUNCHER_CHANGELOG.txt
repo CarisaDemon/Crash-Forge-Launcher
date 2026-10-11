@@ -1,5 +1,14 @@
 Crash Forge: Racing Launcher
 
+v0.3.45 — BIG UPDATE
+- Editor now opens all three packaged EXEs; no old batch shortcuts or visible command windows.
+- Editor selector and tools open on the same monitor as the launcher.
+- Game installation path is selected only in Settings and never changes automatically.
+- Separate Launcher and Game releases appear in one NEWS timeline, with independent ZIPs and versioning.
+- Quiet NEW GAME RELEASE marker and ten-minute news polling; no forced downloads.
+- Experimental game releases are visible but always optional to install.
+- No installed Python or pip required; expanded portable build regression checks.
+
 v0.3.44
 - OGG, CSEQ and Model Importer automatically use the game folder from Launcher Settings.
 - OGG: discover available music destinations and custom native Track mods automatically.

@@ -21,6 +21,7 @@ import tkinter as tk
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from forge_editor_config import find_game_installation
+from forge_editor_geometry import initial_geometry
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 try:
@@ -183,6 +184,10 @@ class App(tk.Tk):
         super().__init__()
         self.title(f"Crash Forge CSEQ Toolkit  v{APP_VERSION}")
         self.geometry("1200x800")
+        # Inherit the exact launcher monitor, even with negative X/Y.
+        editor_geometry = initial_geometry(1200, 800)
+        if editor_geometry:
+            self.geometry(editor_geometry)
         self.minsize(920, 620)
         self.configure(bg=BG)
         self._restore_geometry: str | None = None

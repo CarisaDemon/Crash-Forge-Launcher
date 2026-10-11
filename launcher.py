@@ -18,6 +18,8 @@ import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
+import forge_editor_registry as editor_registry
+import forge_editor_geometry as editor_geometry
 import forge_mod_manager as mod_manager
 import forge_account_badge as account_badge
 from forge_dialogs import ask_mod_install, preview_newer_version
@@ -948,6 +950,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._active_dashboard_tab = tab
         self._sync_dashboard_layout(True)
         self._apply_responsive_layout()
+        if tab == "NEWS":
+            # Reading NEWS acknowledges the orange NEW marker, not an update.
+            self._acknowledge_game_news()
 
     def _arrange_right_cards(self, tabbed):
         """Keep Settings usable as the only right-hand dashboard card."""
@@ -1075,7 +1080,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                  fg=COLORS["orange"],
                  font=("Bahnschrift SemiBold", 8)).pack(anchor="w")
         self._compact_settings_path_label = tk.Label(
-            content, text=self.game_install_path, bg="#171A20",
+            content, text=self.game_install_path or "SELECT GAME FOLDER", bg="#171A20",
             fg="#D8DAD8", justify="left", anchor="w",
             font=("Bahnschrift", 9), wraplength=max(260, w - 76),
             padx=10, pady=10)
@@ -1838,9 +1843,19 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 # same saved installation folder as this launcher.
                 if os.path.isfile(SETTINGS_FILE):
                     env["CFR_LAUNCHER_SETTINGS"] = os.path.abspath(SETTINGS_FILE)
+                # Pick monitor by LAUNCHER location, not the process desktop's
+                # primary display. Negative virtual coordinates are supported.
+                workarea = self._current_monitor_workarea()
+                monitor = editor_geometry.workarea_to_env(workarea)
+                if monitor:
+                    env[editor_geometry.ENV_NAME] = monitor
+                startup = subprocess.STARTUPINFO()
+                startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startup.wShowWindow = 0
                 subprocess.Popen(
                     [path], cwd=os.path.dirname(os.path.abspath(path)),
                     env=env, creationflags=subprocess.CREATE_NO_WINDOW,
+                    startupinfo=startup,
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -1877,9 +1892,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         height = 520
 
         self.update_idletasks()
-        x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
-        y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
-        win.geometry(f"{width}x{height}+{x}+{y}")
+        monitor = self._current_monitor_workarea()
+        if monitor:
+            left, top, work_w, work_h = monitor
+            geometry = editor_geometry.select_window_geometry(
+                width, height,
+                (self.winfo_rootx(), self.winfo_rooty(),
+                 self.winfo_width(), self.winfo_height()),
+                (left, top, left + work_w, top + work_h),
+            )
+            win.geometry(geometry)
+        else:
+            x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
+            y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
+            win.geometry(f"{width}x{height}{x:+d}{y:+d}")
 
         canvas = tk.Canvas(
             win,
@@ -2022,7 +2048,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         cards_host.grid_columnconfigure(1, weight=1, uniform="tool")
         cards_host.grid_columnconfigure(2, weight=1, uniform="tool")
 
-        def make_tool_card(col, title, subtitle, detail, action=None, disabled=False):
+        def make_tool_card(col, title, subtitle, detail,
+                           action=None, disabled=False):
             edge = "#343A42" if disabled else "#4A5058"
             card = tk.Frame(
                 cards_host,
@@ -2127,7 +2154,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 justify="center",
             ).pack(padx=12)
 
-            button_text = "COMING SOON" if disabled else "OPEN TOOL"
+            button_text = "TOOL NOT INSTALLED" if disabled else "OPEN TOOL"
             button = tk.Label(
                 card,
                 text=button_text,
@@ -2164,37 +2191,47 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     except Exception:
                         pass
 
+        # Always resolve the shipped Windows EXEs first, independently of
+        # the game path. All editors receive the game's path via env/settings.
+        tool_paths = {
+            "ogg": editor_registry.editor_executable(
+                "ogg", BASE_DIR,
+                override=OGG_TOOL_PATH,
+                runtime_dir=getattr(sys, "_MEIPASS", None),
+            ),
+            "cseq": editor_registry.editor_executable(
+                "cseq", BASE_DIR,
+                override=CSEQ_TOOL_PATH,
+                runtime_dir=getattr(sys, "_MEIPASS", None),
+            ),
+            "model": editor_registry.editor_executable(
+                "model", BASE_DIR,
+                runtime_dir=getattr(sys, "_MEIPASS", None),
+            ),
+        }
         make_tool_card(
             0,
             "OGG MUSIC",
             ".OGG TOOLKIT",
             "Prepare and manage external OGG music for Crash Forge: Racing.",
-            action=lambda: self._launch_editor_tool(
-                    OGG_TOOL_PATH or os.path.join(
-                        self.game_install_path, "CTR Music Toolkit", "CTR Music Toolkit.bat")),
+            action=lambda: self._launch_editor_tool(tool_paths["ogg"]),
+            disabled=not bool(tool_paths["ogg"]),
         )
         make_tool_card(
             1,
             "CSEQ / MIDI",
             ".MIDI TOOLKIT",
             "Import MIDI, assign CTR instruments or SF2 presets and build CSEQ packages.",
-            action=lambda: self._launch_editor_tool(
-                    CSEQ_TOOL_PATH or os.path.join(
-                        self.game_install_path, "tools", "cfr_midi_tool", "run_tool.bat")),
+            action=lambda: self._launch_editor_tool(tool_paths["cseq"]),
+            disabled=not bool(tool_paths["cseq"]),
         )
-        model_tool = os.path.join(BASE_DIR, "_internal", "editor_tools",
-                                  "CrashForgeModelImporter.exe")
-        if not os.path.isfile(model_tool) and not getattr(sys, "frozen", False):
-            model_tool = os.path.abspath(os.path.join(
-                BASE_DIR, "..", "Crash Forge Character Tool",
-                "Open Crash Forge Character Tool.bat"))
         make_tool_card(
             2,
             "MODEL IMPORTER",
             "CHARACTERS / KARTS / WHEELS / TRACKS",
             "Import characters, modular karts, wheels and native .LEV/.VRM tracks.",
-            action=(lambda: self._launch_editor_tool(model_tool)),
-            disabled=not os.path.isfile(model_tool),
+            action=lambda: self._launch_editor_tool(tool_paths["model"]),
+            disabled=not bool(tool_paths["model"]),
         )
 
         self._editor_status_label = tk.Label(
@@ -2899,11 +2936,18 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         tk.Label(header, text="NEWS", bg=COLORS["panel"],
                  fg=COLORS["text"], font=("Bahnschrift SemiBold", 11)
                  ).pack(side="left")
-        link = tk.Label(header, text="View Source  →",
+        link = tk.Label(header, text="VIEW ALL",
                         bg=COLORS["panel"], fg="#A6A9AD",
                         font=("Bahnschrift", 8), cursor="hand2")
         link.pack(side="right")
         link.bind("<Button-1>", lambda e: self._open_all_news())
+        self.news_game_indicator = tk.Label(
+            header, text="", bg=COLORS["panel"],
+            fg="#FF983C", cursor="hand2",
+            font=("Bahnschrift SemiBold", 8))
+        self.news_game_indicator.pack(side="right", padx=(0, 10))
+        self.news_game_indicator.bind("<Button-1>",
+                                      self._acknowledge_game_news)
 
         container = tk.Frame(parent, bg=COLORS["panel"])
         container.pack(fill="both", expand=True, padx=10, pady=(0, 9))
@@ -2936,7 +2980,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._settings_card(self.settings_panel)
 
     def _load_launcher_settings(self):
-        default_path = services.DEFAULT_GAME_PATH
+        # Never auto-search for a CTR executable or silently rewrite a
+        # previously selected folder. A missing setting stays unset.
         data = {}
         if os.path.exists(SETTINGS_FILE):
             try:
@@ -2963,24 +3008,16 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             self.release_last_check = max(0.0, float(data.get("release_last_check", 0)))
         except (ValueError, TypeError, OverflowError):
             self.release_last_check = 0.0
-        path = str(data.get("game_install_path", "")).strip() or default_path
-        # Recover a verified local installation when a previously configured
-        # empty/future target path does not contain ctr-native.exe.
-        # No game files are touched; only the launcher's remembered path changes.
-        self._auto_recovered_game_path = False
-        if (not services.real_game_status(path)["installed"]
-                and services.real_game_status(default_path)["installed"]):
-            self._auto_recovered_game_path = True
-            path = default_path
-        self.game_install_path = os.path.normpath(path)
-        if self._auto_recovered_game_path:
-            self._save_launcher_settings()
+        chosen = data.get("game_install_path", "")
+        # Preserve the exact explicitly chosen path even when the game is
+        # temporarily absent, moved or its executable has not been installed.
+        self.game_install_path = chosen if isinstance(chosen, str) else ""
         return data
 
     def _save_launcher_settings(self):
         data = dict(getattr(self, "_launcher_settings_data", {}) or {})
         data.update({
-            "game_install_path": getattr(self, "game_install_path", services.DEFAULT_GAME_PATH),
+            "game_install_path": getattr(self, "game_install_path", ""),
             "release_check_frequency": getattr(self, "release_check_frequency", "Daily"),
             "release_last_check": getattr(self, "release_last_check", 0.0),
             "release_last_result": getattr(self, "release_last_result", "")[:140],
@@ -2999,30 +3036,31 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             return False
 
     def _refresh_install_location_ui(self):
-        path = getattr(
-            self,
-            "game_install_path",
-            services.DEFAULT_GAME_PATH,
-        )
+        path = getattr(self, "game_install_path", "")
+        display = path if path else "SELECT GAME FOLDER"
 
         if hasattr(self, "install_path_label"):
             rail_width = (self.right_panel.winfo_width() if hasattr(self, "right_panel")
                           else 290)
             self.install_path_label.configure(
-                text=self._compact_install_path(path, max(15, (rail_width - 120) // 6)))
+                text=(self._compact_install_path(path, max(15, (rail_width - 120) // 6))
+                      if path else display))
         popup = getattr(self, "_compact_settings_path_label", None)
         if popup is not None:
             try:
                 if popup.winfo_exists():
-                    popup.configure(text=path)
+                    popup.configure(text=display)
             except tk.TclError:
                 pass
 
-        exe_path = os.path.join(path, "ctr-native.exe")
-        installed = os.path.isfile(exe_path)
-        folder_exists = os.path.isdir(path)
+        exe_path = os.path.join(path, "ctr-native.exe") if path else ""
+        installed = bool(exe_path) and os.path.isfile(exe_path)
+        folder_exists = bool(path) and os.path.isdir(path)
 
-        if installed:
+        if not path:
+            status_text = "NO GAME FOLDER SELECTED"
+            status_color = "#A0A5AB"
+        elif installed:
             status_text = "INSTALLED"
             status_color = COLORS["success"]
         elif folder_exists:
@@ -3127,7 +3165,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         self.install_path_label = tk.Label(
             path_box,
-            text=self.game_install_path,
+            text=self.game_install_path or "SELECT GAME FOLDER",
             bg="#15181D",
             fg="#A8ABB0",
             font=("Bahnschrift", 7),
@@ -3427,15 +3465,20 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         if not selected:
             return
 
+        old_path = self.game_install_path
         self.game_install_path = os.path.normpath(selected)
-        if self._save_launcher_settings():
+        if not self._save_launcher_settings():
+            # Never pretend a new path has been chosen if the preference
+            # couldn't be written. Keep the last successfully saved folder.
+            self.game_install_path = old_path
             self.status_label.configure(
-                text=f"Install location set to: {self.game_install_path}"
+                text="Could not save folder selection; previous game folder retained."
             )
-        else:
-            self.status_label.configure(
-                text="Install location changed, but settings could not be saved."
-            )
+            self._refresh_install_location_ui()
+            return
+        self.status_label.configure(
+            text=f"Game folder saved: {self.game_install_path}"
+        )
         self._refresh_install_location_ui()
         self._refresh_real_install_ui()
         # Offline BIN fingerprinting is silent and cannot prevent PLAY.

@@ -1,4 +1,4 @@
-"""No-focus tests for verified-game-version popup and PLAY behavior."""
+﻿"""No-focus tests for verified-game-version popup and PLAY behavior."""
 import inspect
 from pathlib import Path
 import sys
@@ -68,8 +68,11 @@ class VersionWarningTests(unittest.TestCase):
     def test_play_anyway_starts_exactly_once(self):
         app = self._fake_app(self.verified, allow=True)
         started = self._run_play(app)
-        started.assert_called_once_with(
-            [r"C:\Fake\ctr-native.exe"], cwd=r"C:\Fake")
+        started.assert_called_once()
+        args, kwargs = started.call_args
+        self.assertEqual(args[0], [r"C:\Fake\ctr-native.exe"])
+        self.assertEqual(kwargs["cwd"], r"C:\Fake")
+        self.assertEqual(kwargs["stdout"], __import__("subprocess").DEVNULL)
         item = app._confirm_play_older_game.call_args.args[0]
         self.assertEqual(item["available"], "2.0.10")
 

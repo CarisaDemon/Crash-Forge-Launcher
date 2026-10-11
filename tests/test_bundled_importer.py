@@ -8,8 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class BundledImporterTests(unittest.TestCase):
     def test_launcher_opens_bundled_importer(self):
         source = (ROOT/"launcher.py").read_text(encoding="utf-8")
-        self.assertIn('"_internal", "editor_tools"', source)
-        self.assertIn('action=(lambda: self._launch_editor_tool(model_tool))', source)
+        self.assertIn('editor_registry.editor_executable(', source)
+        self.assertIn('self._launch_editor_tool(tool_paths["model"])', source)
+        self.assertNotIn('CTR Music Toolkit.bat', source)
         self.assertIn('"CHARACTERS / KARTS / WHEELS / TRACKS"', source)
         self.assertNotIn("_install_or_open_model_importer", source)
 

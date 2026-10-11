@@ -173,8 +173,13 @@ class TestIntegrity(unittest.TestCase):
             side_effect=RuntimeError("ISO checker unavailable")
         ), mock.patch.object(live.subprocess, "Popen") as game_spawn:
             ForgeLiveMixin._play_installed_game(example)
-            game_spawn.assert_called_once_with(
-                ["C:/a-fake-game/ctr-native.exe"], cwd="C:/a-fake-game")
+            game_spawn.assert_called_once()
+            args, kwargs = game_spawn.call_args
+            self.assertEqual(args[0], ["C:/a-fake-game/ctr-native.exe"])
+            self.assertEqual(kwargs["cwd"], "C:/a-fake-game")
+            self.assertEqual(kwargs["creationflags"],
+                             live.subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+            self.assertEqual(kwargs["stdout"], live.subprocess.DEVNULL)
         label.configure.assert_called_with(text="Started installed Crash Forge game.")
 
     def test_read_error_is_report_only(self):
