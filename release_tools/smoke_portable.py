@@ -85,6 +85,18 @@ def main():
     python_dll=PORTABLE/"_internal"/"python312.dll"
     assert python_dll.is_file(), "Embedded Python runtime DLL was not bundled"
     print("PASS portable Launcher with NO Python/pip/developer PATH (embedded runtime)")
+    # Unlike --self-test, this creates a real Tk interpreter. Deliberately
+    # poison user Tcl/Tk environment variables to prevent reading the
+    # developer's local Python installation.
+    no_external_tcl = dict(independent_env)
+    no_external_tcl["TCL_LIBRARY"] = str(PORTABLE / "nonexistent-system-tcl")
+    no_external_tcl["TK_LIBRARY"] = str(PORTABLE / "nonexistent-system-tk")
+    result = no_window_run([str(MAIN), "--tk-self-test"], timeout=60,
+                           env=no_external_tcl)
+    assert result.returncode == 0, (
+        "Frozen Tcl/Tk could not create a real GUI without system Python: "
+        + result.stderr[-800:])
+    print("PASS real Tcl/Tk startup without installed Python or environment Tcl")
     # Exercise a fully extracted portable ZIP under a fresh OneDrive-like path.
     checks=("_internal/_tcl_data/init.tcl","_internal/_tk_data/tk.tcl",
             "_internal/tcl86t.dll","_internal/tk86t.dll","_internal/_tkinter.pyd")
@@ -99,7 +111,15 @@ def main():
             assert (folder/entry).is_file(), "Missing portable Tcl/Tk: "+entry
         result=no_window_run([str(folder/"CrashForgeLauncher.exe"),"--self-test"])
         assert result.returncode==0, "Launcher failed after extraction: "+result.stderr[-900:]
-    print("PASS fully extracted release ZIP under OneDrive-like path")
+        bad_env = dict(no_external_tcl)
+        bad_env["TCL_LIBRARY"] = str(folder/"wrong-tcl-system-path")
+        bad_env["TK_LIBRARY"] = str(folder/"wrong-tk-system-path")
+        result = no_window_run([str(folder/"CrashForgeLauncher.exe"),"--tk-self-test"],
+                               timeout=60,env=bad_env)
+        assert result.returncode == 0, (
+            "Extracted OneDrive launcher cannot initialize real Tcl/Tk "
+            "without external Python: "+result.stderr[-900:])
+    print("PASS REAL Tcl/Tk UI after full OneDrive-like ZIP extraction without Python")
     import forge_launcher_integrity as integrity
     assert integrity.audit(PORTABLE)["status"]=="ok"
     featured = PORTABLE/"_internal"/"assets"/"news"/"latest_update.webp"

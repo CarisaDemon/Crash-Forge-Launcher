@@ -8,6 +8,8 @@ import queue
 import ctypes
 import subprocess
 from datetime import datetime
+from forge_tcl_bootstrap import prepare_frozen_tcl
+prepare_frozen_tcl()
 import tkinter as tk
 from tkinter import font as tkfont, filedialog, messagebox
 from forge_live_ui import ForgeLiveMixin
@@ -5081,6 +5083,24 @@ if __name__ == "__main__":
             required.append(os.path.join(BASE_DIR, launcher_updates.UPDATER_EXE))
         invalid = any(not os.path.isfile(item) for item in required)
         raise SystemExit(1 if invalid else 0)
+    if sys.argv[1:] == ["--tk-self-test"]:
+        # Actually initialize and dispose Tcl/Tk; --self-test alone only
+        # checked file presence and could miss broken init.tcl on another PC.
+        # No news feeds, account calls, update downloads or user settings.
+        root = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.update_idletasks()
+            actual = str(root.tk.call("info", "library"))
+            expected = os.environ.get("TCL_LIBRARY")
+            if expected and os.path.normcase(os.path.normpath(actual)) != (
+                    os.path.normcase(os.path.normpath(expected))):
+                raise RuntimeError("Tk selected an unexpected Tcl directory")
+        finally:
+            if root is not None:
+                root.destroy()
+        raise SystemExit(0)
     # Screenshot preview mode never polls remote feeds, stages downloads, or
     # self-updates.  It is a separate test instance; never mutate the user's
     # existing installed launcher.
