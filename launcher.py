@@ -2237,52 +2237,28 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self.iconify()
 
     def _current_monitor_workarea(self):
+        """Monitor containing the *visible launcher coordinates*, not its
+        transient HWND. The taskbar icon fix can temporarily reparent/hide
+        the window; MonitorFromWindow may then fail and incorrectly send
+        FIT TO WINDOW to the primary display.
+        """
         if os.name != "nt":
             return None
         try:
-            class RECT(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
-                ]
-
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", ctypes.c_ulong),
-                    ("rcMonitor", RECT),
-                    ("rcWork", RECT),
-                    ("dwFlags", ctypes.c_ulong),
-                ]
-
-            hwnd = self._get_native_hwnd()
-            if not hwnd:
-                return None
-
-            user32 = ctypes.windll.user32
-            user32.MonitorFromWindow.restype = ctypes.c_void_p
-            monitor = user32.MonitorFromWindow(
-                ctypes.c_void_p(hwnd), 0x00000002
+            # Tk root coordinates remain stable even while Windows changes
+            # the borderless wrapper HWND for taskbar integration.
+            center_x = self.winfo_rootx() + max(1, self.winfo_width()) // 2
+            center_y = self.winfo_rooty() + max(1, self.winfo_height()) // 2
+            left, top, right, bottom = account_badge.monitor_work_area_at(
+                center_x, center_y,
+                fallback=(0, 0, self.winfo_screenwidth(),
+                          self.winfo_screenheight()),
             )
-            if not monitor:
+            width, height = right - left, bottom - top
+            if width <= 0 or height <= 0:
                 return None
-
-            info = MONITORINFO()
-            info.cbSize = ctypes.sizeof(MONITORINFO)
-            if not user32.GetMonitorInfoW(
-                ctypes.c_void_p(monitor), ctypes.byref(info)
-            ):
-                return None
-
-            rect = info.rcWork
-            return (
-                rect.left,
-                rect.top,
-                rect.right - rect.left,
-                rect.bottom - rect.top,
-            )
-        except Exception:
+            return (left, top, width, height)
+        except (AttributeError, OSError, ValueError, tk.TclError):
             return None
 
     def _toggle_maximize(self):
@@ -2305,8 +2281,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             y_part = f"+{y}" if y >= 0 else str(y)
             self.geometry(f"{width}x{height}{x_part}{y_part}")
         else:
+            # Very old Windows builds or temporary display API failures:
+            # fit around the current window instead of jumping to (0,0).
+            x, y = self.winfo_rootx(), self.winfo_rooty()
             self.geometry(
-                f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0"
+                f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}"
+                f"{x:+d}{y:+d}"
             )
 
         self._is_maximized = True
@@ -2323,7 +2303,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
     def _drag_move(self, event):
         if self._is_maximized:
             return
-        self.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
+        px = int(event.x_root - self._drag_x)
+        py = int(event.y_root - self._drag_y)
+        self.geometry(f"{px:+d}{py:+d}")
 
     def _build_resize_grips(self):
         # Tk's borderless override removes native Windows resizing. Eight

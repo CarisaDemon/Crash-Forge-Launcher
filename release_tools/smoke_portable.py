@@ -24,8 +24,10 @@ MAIN=PORTABLE/updates.APP_EXE
 HELPER=PORTABLE/updates.UPDATER_EXE
 
 
-def no_window_run(cmd,timeout=40):
+def no_window_run(cmd,timeout=40,env=None):
     kwargs={"timeout":timeout,"check":False,"capture_output":True,"text":True}
+    if env is not None:
+        kwargs["env"]=env
     if os.name=="nt":
         kwargs["creationflags"]=subprocess.CREATE_NO_WINDOW
         startup=subprocess.STARTUPINFO()
@@ -65,6 +67,24 @@ def main():
     assert result.returncode==0,(
         "Packaged launcher failed background smoke: "+result.stderr[-1500:])
     print("PASS packaged launcher EXE self-test without showing window")
+    # Community PCs should never need system Python. Hide Python, pip and all
+    # developer tools from the *child* PATH; keep only built-in Windows paths.
+    windows = os.environ.get("SystemRoot") or r"C:\Windows"
+    independent_env = dict(os.environ)
+    independent_env["PATH"] = os.pathsep.join([
+        str(Path(windows)/"System32"), windows,
+        str(Path(windows)/"System32"/"WindowsPowerShell"/"v1.0"),
+    ])
+    for key in ("PYTHONPATH","PYTHONHOME","PYTHONEXECUTABLE","PYTHONSTARTUP",
+                "VIRTUAL_ENV","CONDA_PREFIX"):
+        independent_env.pop(key,None)
+    result=no_window_run([str(MAIN),"--self-test"],env=independent_env)
+    assert result.returncode==0,(
+        "Launcher needs something outside bundled Windows files/Python: "
+        +result.stderr[-1000:])
+    python_dll=PORTABLE/"_internal"/"python312.dll"
+    assert python_dll.is_file(), "Embedded Python runtime DLL was not bundled"
+    print("PASS portable Launcher with NO Python/pip/developer PATH (embedded runtime)")
     # Exercise a fully extracted portable ZIP under a fresh OneDrive-like path.
     checks=("_internal/_tcl_data/init.tcl","_internal/_tk_data/tk.tcl",
             "_internal/tcl86t.dll","_internal/tk86t.dll","_internal/_tkinter.pyd")
@@ -93,6 +113,11 @@ def main():
     result = no_window_run([str(model_importer), "--self-test"], timeout=55)
     assert result.returncode == 0, "Bundled Model Importer failed headless self-test"
     print("PASS bundled Model Importer v1.7 (no console)")
+    result=no_window_run([str(model_importer),"--self-test"],
+                         timeout=55,env=independent_env)
+    assert result.returncode==0,(
+        "Bundled importer requires a system Python install: "+result.stderr[-1000:])
+    print("PASS bundled Model Importer with NO Python/pip/developer PATH")
 
     binary=release_zip()
     expected=hashlib.sha256(binary).hexdigest()
