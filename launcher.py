@@ -1834,6 +1834,10 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     # The two music editors scan the installed mod tree.
                     # Never hardcode custom tracks or game installation paths.
                     env["CFR_GAME_PATH"] = game
+                # Editors can open independently as well: they all read the
+                # same saved installation folder as this launcher.
+                if os.path.isfile(SETTINGS_FILE):
+                    env["CFR_LAUNCHER_SETTINGS"] = os.path.abspath(SETTINGS_FILE)
                 subprocess.Popen(
                     [path], cwd=os.path.dirname(os.path.abspath(path)),
                     env=env, creationflags=subprocess.CREATE_NO_WINDOW,

@@ -139,6 +139,53 @@ def main():
         "Bundled importer requires a system Python install: "+result.stderr[-1000:])
     print("PASS bundled Model Importer with NO Python/pip/developer PATH")
 
+    # All three shipped editors must be true Windows GUI executables.
+    # No installed Python/PIP or terminal should be needed.
+    tools = PORTABLE / "_internal" / "editor_tools"
+    for filename in ("CrashForgeOGGToolkit.exe", "CrashForgeCSEQToolkit.exe"):
+        packaged = tools / filename
+        assert packaged.is_file(), "Bundled editor missing: " + filename
+        assert_windows_gui_subsystem(packaged)
+        result = no_window_run([str(packaged), "--self-test"],
+                               timeout=55, env=independent_env)
+        assert result.returncode == 0, (
+            "Bundled editor requires external runtime or assets: " + filename
+            + " " + result.stderr[-350:])
+        print("PASS self-contained GUI editor: " + filename)
+
+    # The OGG Toolkit delegates to built-in Windows PowerShell 5, but must
+    # never open a console and must load its real WinForms CF:R icons and mods.
+    # A temporary fake game eliminates dependency on the developer's PC.
+    with tempfile.TemporaryDirectory(prefix="CFR portable editors ") as td:
+        fake_game = Path(td) / "Game Folder"
+        fake_game.mkdir()
+        (fake_game / "ctr-native.exe").write_bytes(b"MZTEST")
+        sample = fake_game / "assets" / "mods" / "tracks" / "my_custom_track"
+        sample.mkdir(parents=True)
+        (sample / "data.lev").write_bytes(b"LEV")
+        (sample / "data.vrm").write_bytes(b"VRM")
+        (sample / "track.ini").write_text(
+            "[track]\nname=My Custom Track\nformat=native_lev_vrm\n"
+            "enabled=true\nlev=data.lev\nvrm=data.vrm\n",
+            encoding="utf-8")
+        result_file = Path(td)/"ogg-gui-smoke.json"
+        env = dict(independent_env)
+        env["CFR_GAME_PATH"] = str(fake_game)
+        env["CFR_OGG_SMOKE_OUTPUT"] = str(result_file)
+        result = no_window_run(
+            [str(tools / "CrashForgeOGGToolkit.exe"), "--ui-smoke"],
+            timeout=65, env=env)
+        assert result.returncode == 0 and result_file.is_file(), (
+            "Compiled OGG WinForms startup failed: " + result.stderr[-450:])
+        import json
+        verified = json.loads(result_file.read_text(encoding="utf-8"))
+        assert all(verified.get(name) is True for name in (
+            "GameRoot", "Hangout", "NativeTrack", "Logo",
+            "WindowIcon", "TaskbarEnabled")), (
+            "Compiled OGG missing game/Hangout/native track/icon: "
+            + str(verified))
+    print("PASS compiled OGG editor REAL WinForms without console or external Python")
+
     binary=release_zip()
     expected=hashlib.sha256(binary).hexdigest()
     with tempfile.TemporaryDirectory() as td:

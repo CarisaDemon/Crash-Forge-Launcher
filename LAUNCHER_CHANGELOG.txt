@@ -1,5 +1,14 @@
 Crash Forge: Racing Launcher
 
+v0.3.44
+- OGG, CSEQ and Model Importer automatically use the game folder from Launcher Settings.
+- OGG: show Hangout level_99 and discover custom native Track mods dynamically.
+- CSEQ: show installed custom track modules, always-visible game folder and Refresh Mods.
+- OGG: restore CF:R header logo and Windows taskbar icon, suppress PowerShell consoles.
+- CSEQ and Model Importer: improved native taskbar icons and shared game path.
+- Windows editors remain portable EXEs; no installed Python or pip required.
+- Added clean ZIP smoke tests for editor icons, track discovery and dependencies.
+
 v0.3.43
 - Forge Hub accounts: GitHub browser login, email or username/password and registration.
 - Connect existing accounts securely; manage account profile, linked providers and sign out.

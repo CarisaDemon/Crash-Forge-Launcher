@@ -7,12 +7,15 @@ import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+if not getattr(sys, "frozen", False):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from forge_editor_config import find_game_installation
 from crash_forge_kart_colors import install_colors, KartColorError
 from crash_forge_model_imports import import_mod, ImportErrorMod
 from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
 
 APP_TITLE = "Crash Forge Model Importer"
-APP_VERSION = "1.8"
+APP_VERSION = "1.8.1"
 TOOL_DIR = Path(__file__).resolve().parent
 
 def find_source_root():
@@ -24,24 +27,9 @@ def find_source_root():
     return None
 
 def find_installed_game():
-    roots = [TOOL_DIR, TOOL_DIR.parent]
-    if getattr(sys, "frozen", False):
-        binary_dir = Path(sys.executable).resolve().parent
-        roots.extend((binary_dir, binary_dir.parent, binary_dir.parent.parent))
-    for root in roots:
-        settings = root / "launcher_settings.json"
-        if settings.is_file():
-            try:
-                info = json.loads(settings.read_text(encoding="utf-8-sig"))
-                path = Path(info.get("game_install_path", ""))
-                if (path / "ctr-native.exe").is_file():
-                    return str(path)
-            except (OSError, ValueError, TypeError):
-                pass
-    candidate = TOOL_DIR.parent / "Crash Team Racing Compiled Custom Music"
-    if (candidate / "ctr-native.exe").is_file():
-        return str(candidate)
-    return ""
+    # Exactly the same validated installation as in Launcher Settings.
+    # CFR_GAME_PATH can supply the selected path even when called as an EXE.
+    return str(find_game_installation(source_file=__file__) or "")
 
 SOURCE_ROOT = find_source_root()
 DEFAULT_GAME_ROOT = str(SOURCE_ROOT) if SOURCE_ROOT else ""
@@ -222,6 +210,17 @@ class App(tk.Tk):
                 self.iconbitmap(str(icon))
         except (OSError, tk.TclError):
             pass
+        self._taskbar_photo = None
+        logo = self._forge_art_file("icons/cfr_icon.png")
+        if logo is not None:
+            try:
+                from PIL import Image, ImageTk
+                self._taskbar_photo = ImageTk.PhotoImage(
+                    Image.open(logo).convert("RGBA")
+                )
+                self.iconphoto(True, self._taskbar_photo)
+            except (ImportError, OSError, tk.TclError):
+                pass
 
     def _setup_style(self):
         style = ttk.Style(self)

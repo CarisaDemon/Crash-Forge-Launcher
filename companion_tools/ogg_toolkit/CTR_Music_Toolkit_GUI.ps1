@@ -74,11 +74,12 @@ $script:KnownNames = @{
     62 = "CREDITS_LIZ"
     63 = "CREDITS_MEGUMI"
     64 = "SCRAPBOOK"
+    99 = "HANGOUT_HUB"
 }
 
 # Show base references even without an OGG.
 # Reference IDs are assigned in the exact order supplied by the user (0..64).
-$script:ReferenceIds = 0..64
+$script:ReferenceIds = @(0..64) + @(99)
 
 # ---------- Colors ----------
 $C_BG      = [System.Drawing.Color]::FromArgb(8,9,11)
@@ -1026,7 +1027,24 @@ $form.BackColor = $C_BG
 $form.ForeColor = $C_TEXT
 $form.Font = New-Object System.Drawing.Font("Bahnschrift",9)
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$form.ShowInTaskbar = $true
+$form.ShowIcon = $true
 $form.KeyPreview = $true
+# Separate OGG Toolkit from Windows PowerShell taskbar grouping.
+try {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CrashForgeOggIdentity {
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string appID);
+}
+'@ -ErrorAction Stop
+    [void][CrashForgeOggIdentity]::SetCurrentProcessExplicitAppUserModelID(
+        "CrashForge.Racing.OGGToolkit"
+    )
+} catch {}
+
 
 # For the bundled toolkit these resources are extracted beside this script
 # by the launcher EXE. No user-specific C: drive paths are necessary.
@@ -1044,7 +1062,10 @@ if (Test-Path $forgeBackgroundPath) {
 }
 
 if (Test-Path $forgeIconPath) {
-    try { $form.Icon = New-Object System.Drawing.Icon($forgeIconPath) } catch {}
+    try {
+        $form.Icon = New-Object System.Drawing.Icon($forgeIconPath)
+        $form.ShowIcon = $true
+    } catch {}
 }
 
 function New-ForgeButton([string]$text, [int]$width, [string]$kind = "normal") {
@@ -1120,6 +1141,9 @@ $logo.BackColor = [System.Drawing.Color]::Transparent
 if (Test-Path $forgeLogoPath) {
     try { $logo.Image = [System.Drawing.Image]::FromFile($forgeLogoPath) } catch {}
 }
+if (($null -eq $logo.Image) -and ($null -ne $form.Icon)) {
+    try { $logo.Image = $form.Icon.ToBitmap() } catch {}
+}
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "CRASH FORGE / OGG TOOLKIT"
@@ -1138,7 +1162,7 @@ $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(90,51)
 
 $toolVersion = New-Object System.Windows.Forms.Label
-$toolVersion.Text = "TOOLKIT v1.0.8"
+$toolVersion.Text = "TOOLKIT v1.0.9"
 $toolVersion.Font = New-Object System.Drawing.Font("Bahnschrift",8)
 $toolVersion.ForeColor = $C_MUTED
 $toolVersion.BackColor = [System.Drawing.Color]::Transparent
@@ -1220,6 +1244,7 @@ $header.Add_MouseUp({ $script:DraggingForgeWindow = $false })
 $header.Add_DoubleClick({ $btnMax.PerformClick() })
 
 $brandShade.Controls.AddRange(@($logo,$title,$subtitle))
+$logo.BringToFront()
 $header.Controls.Add($brandShade)
 $header.Controls.AddRange(@($toolVersion,$btnMini,$btnMax,$btnClose))
 
@@ -1408,7 +1433,7 @@ $pathBox.Add_KeyDown({
     }
 })
 $btnAbout.Add_Click({
-    Show-Info "Crash Forge OGG Toolkit v1.0.8`n`nManage custom OGG tracks for Crash Forge: Racing. Select a game folder or type its path and press Enter.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
+    Show-Info "Crash Forge OGG Toolkit v1.0.9`n`nManage custom OGG tracks for Crash Forge: Racing. Select a game folder or type its path and press Enter.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
 })
 $btnAdd.Add_Click({ Add-Music })
 $btnFinal.Add_Click({ Create-FinalLap })
@@ -1431,5 +1456,37 @@ $list.Add_DoubleClick({
 
 if ($env:CFR_GAME_PATH -and (Test-CtrRoot $env:CFR_GAME_PATH)) {
     [void](Set-Root $env:CFR_GAME_PATH)
+}
+
+# Capture only the REAL program UI for the launcher NEWS preview. This does
+# not draw or generate artistic imagery; it screenshots our actual WinForms UI.
+# No window is shown or moved on the user's desktop.
+if ($env:CFR_OGG_CAPTURE) {
+    $form.CreateControl()
+    $form.PerformLayout()
+    $dimensions = New-Object System.Drawing.Size(1180,760)
+    $bitmap = New-Object System.Drawing.Bitmap($dimensions.Width,$dimensions.Height)
+    $form.DrawToBitmap($bitmap,(New-Object System.Drawing.Rectangle(0,0,1180,760)))
+    $bitmap.Save($env:CFR_OGG_CAPTURE,[System.Drawing.Imaging.ImageFormat]::Png)
+    $bitmap.Dispose()
+    $form.Dispose()
+    return
+}
+
+# Headless smoke against the compiled OGG EXE, no dialogs shown.
+if ($env:CFR_OGG_SMOKE -eq "1") {
+    $rows = @(Get-TrackRows)
+    [PSCustomObject]@{
+        GameRoot = [bool]$script:RootPath
+        Hangout = [bool](@($rows | Where-Object { $_.ID -eq 99 }).Count -gt 0)
+        NativeTrack = [bool](@($rows | Where-Object {
+            $_.IsCustom -and $_.Slug -eq "my_custom_track"
+        }).Count -gt 0)
+        Logo = [bool]($null -ne $logo.Image)
+        WindowIcon = [bool]($null -ne $form.Icon)
+        TaskbarEnabled = [bool]$form.ShowInTaskbar
+    } | ConvertTo-Json -Compress
+    $form.Dispose()
+    return
 }
 [void]$form.ShowDialog()

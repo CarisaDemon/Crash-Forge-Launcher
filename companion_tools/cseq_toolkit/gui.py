@@ -18,6 +18,9 @@ import sys
 import threading
 import wave
 import tkinter as tk
+if not getattr(sys, "frozen", False):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from forge_editor_config import find_game_installation
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 try:
@@ -80,7 +83,7 @@ WARNING = "#FFB000"
 ERROR = "#FF6B78"
 BORDER = "#2A2F36"
 LINE_HOT = "#6A2A08"
-APP_VERSION = "1.0.14"
+APP_VERSION = "1.0.15"
 
 # Use assets shipped inside our own EXE, never another installation's files.
 _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -168,6 +171,15 @@ LEVEL_TARGETS = {
 
 class App(tk.Tk):
     def __init__(self) -> None:
+        if os.name == "nt":
+            try:
+                import ctypes
+                f = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
+                f.argtypes = [ctypes.c_wchar_p]
+                f.restype = ctypes.c_long
+                f("CrashForge.Racing.CSEQToolkit")
+            except (OSError, AttributeError):
+                pass
         super().__init__()
         self.title(f"Crash Forge CSEQ Toolkit  v{APP_VERSION}")
         self.geometry("1200x800")
@@ -193,6 +205,15 @@ class App(tk.Tk):
                 self.iconbitmap(str(icon_path))
             except tk.TclError:
                 pass
+        self._taskbar_photo = None
+        if FORGE_ICON_PNG.is_file() and Image is not None and ImageTk is not None:
+            try:
+                self._taskbar_photo = ImageTk.PhotoImage(
+                    Image.open(FORGE_ICON_PNG).convert("RGBA")
+                )
+                self.iconphoto(True, self._taskbar_photo)
+            except (OSError, tk.TclError):
+                pass
 
         self.current_path: Path | None = None
         self.current_midi: MidiFile | None = None
@@ -201,7 +222,9 @@ class App(tk.Tk):
         self.channel_transpose_vars: dict[int, tk.IntVar] = {}
         self.drum_vars: dict[int, tk.StringVar] = {}
         self.target_var = tk.StringVar(value="No level override")
-        self.game_root_var = tk.StringVar(value=os.environ.get("CFR_GAME_PATH", ""))
+        self.game_root_var = tk.StringVar(
+            value=str(find_game_installation(source_file=__file__) or "")
+        )
         self.custom_track_targets = {}
         self.race_intro_var = tk.BooleanVar(value=False)
         self.race_intro_status_var = tk.StringVar(
@@ -310,6 +333,19 @@ class App(tk.Tk):
             command=self._preview_global_catalog_value,
             style="Accent.TButton",
         ).pack(side="left")
+
+        # Keep the game installation visible from every tab, not buried only
+        # inside Build CSEQ. This is shared with Launcher Settings.
+        self.game_bar = ttk.Frame(self, style="Panel.TFrame", padding=(20, 6, 20, 9))
+        self.game_bar.pack(fill="x")
+        ttk.Label(self.game_bar, text="GAME INSTALLATION",
+                  style="Section.TLabel").pack(side="left", padx=(0, 10))
+        ttk.Label(self.game_bar, textvariable=self.game_root_var,
+                  style="Muted.TLabel", width=70).pack(side="left", fill="x", expand=True)
+        ttk.Button(self.game_bar, text="BROWSE GAME",
+                   command=self._browse_custom_tracks_game).pack(side="right")
+        ttk.Button(self.game_bar, text="REFRESH MODS",
+                   command=self._refresh_custom_tracks).pack(side="right", padx=(0, 6))
 
         self.tabs = ttk.Notebook(self)
         self.tabs.pack(fill="both", expand=True, padx=20, pady=(0, 10))
@@ -2515,4 +2551,12 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        # Test the frozen editor independently: no GUI, no Python install.
+        assert FORGE_BACKGROUND.is_file(), "Bundled CSEQ background missing"
+        assert FORGE_ICON_PNG.is_file(), "Bundled CSEQ icon image missing"
+        assert (_BUNDLE_DIR / "assets" / "cfr_icon.ico").is_file(), (
+            "Bundled CSEQ taskbar icon missing"
+        )
+        raise SystemExit(0)
     App().mainloop()

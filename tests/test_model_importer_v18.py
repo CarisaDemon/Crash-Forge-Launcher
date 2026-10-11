@@ -13,7 +13,7 @@ from crash_forge_model_imports import import_mod,ImportErrorMod
 
 class ModelImporterV18Tests(unittest.TestCase):
     def test_the_exact_updated_tool_is_bundled(self):
-        self.assertEqual(importer.APP_VERSION,"1.8")
+        self.assertEqual(importer.APP_VERSION,"1.8.1")
         source=(TOOL_DIR/"crash_forge_character_tool.py").read_text(encoding="utf-8")
         for item in ('"CHARACTER"','"KART"','"WHEELS"','"TRACKS"',
                      'def _show_section(', 'def _import_mod(', 'def _load_forge_background('):

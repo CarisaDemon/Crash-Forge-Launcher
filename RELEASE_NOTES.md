@@ -1,29 +1,31 @@
-![Forge Hub account: Guest profile widget](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.43/forge-news-v0.3.43.webp)
+![Crash Forge OGG Toolkit showing native custom music](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.44/forge-news-v0.3.44.webp)
 
-# Crash Forge: Racing Launcher v0.3.43
+# Crash Forge: Racing Launcher v0.3.44
 
-**Changes since v0.3.42 (Windows).** This release contains the account work, UI changes and fixes made after the last published launcher. **The game itself is not updated by this download.**
+**Changes since v0.3.43 — Windows Launcher and bundled editor tools.**
 
-## Forge Hub identity and login
-- Added a **Forge Hub account system** inside the launcher: GitHub login opens the browser; email or username with password is supported; new accounts can register and confirm their email.
-- Existing Forge Hub identities can connect through a short-lived, one-time browser approval code. The account links to the same Forge Hub creator identity; no parallel user database is created.
-- Added a profile view, account username management, GitHub provider-link flow and explicit sign out. GitHub passwords are never entered inside the launcher.
-- Session refresh credentials are protected with Windows DPAPI; account network requests run without blocking the game launcher window.
+## Shared game installation
+- **OGG Toolkit, CSEQ/MIDI Toolkit and Model Importer** now automatically use the game installation selected in Launcher Settings, even when opened directly from their own EXEs.
+- The selected game path is validated before use; if the launcher has not configured a game yet, you can choose a folder manually.
+- CSEQ has a clearly visible **GAME INSTALLATION / BROWSE GAME** bar on every tab, plus a **REFRESH MODS** action.
+- Existing installations, mods, configuration and saved games are not changed by updating the launcher.
 
-## Account widget / menus
-- A **single compact profile widget** now lives in the upper-right header, with your GitHub avatar when available, username and connection indicator.
-- **Guest** mode has a visible person silhouette, gray status and only **LOG IN / OPEN FORGE HUB** in the popup. A verified active session shows a green **Online** indicator, **MY ACCOUNT / OPEN FORGE HUB / SIGN OUT**.
-- Styled the popup with Crash Forge's orange borders; removed the duplicate **ACCOUNT** header button.
-- Fixed the modal account popup that could freeze input or resist closing. Account window and launcher now close independently.
+## Music track detection
+- OGG Toolkit includes **level_99 — HANGOUT_HUB** even before a custom OGG file has been installed. It continues detecting other level_XX files dynamically.
+- Both OGG and CSEQ now discover enabled native track modules from the game's mods folders when the configured installation is available, including legacy assets/mods/tracks.
+- CSEQ's list can show tracks such as **My Custom Track** using its native track.ini; OGG shows these modules even when no custom OGG is assigned yet.
+- Custom native tracks remain experimental: discovery in the editors does **not** mean that the game-side track loader and collision behavior have been finalized.
 
-## Windows and multi-monitor
-- The account popup now stays beside the user widget on **whichever monitor** contains the launcher; it also follows window movement.
-- **Fit to Window / maximize** now uses the active monitor's work area instead of jumping from monitor 2 to monitor 1. Restore returns to the previous size and position.
-- Improved desktop coordinate handling for secondary monitors with negative positions and taskbar space.
+## Native Windows editor windows
+- Restored the **CF:R logo on the OGG Toolkit title header**, with a real form icon and Windows taskbar identity.
+- Improved taskbar icon handling in the **CSEQ Toolkit and Model Importer**.
+- The OGG Toolkit launches Windows PowerShell silently, using a hidden background process rather than a visible console.
+- All three editors ship as self-contained Windows GUI EXEs, bundled with the launcher. **No installation of Python or pip is needed**; the OGG GUI uses Windows PowerShell/.NET already included with Windows.
+- The OGG Toolkit script is encoded correctly for Windows PowerShell 5.1, avoiding non-ASCII character parse errors on machines using older locale settings.
 
-## Portable release and safety
-- The ZIP remains a **standalone Windows app** with embedded Python/Tk/Pillow runtime, launcher updater, and bundled OGG, CSEQ/MIDI and Model Importer executables. **No system Python or pip install is needed.**
-- Expanded build checks for portable use with Python removed from PATH, verified extracted ZIPs, account login safety, menu interactions, second-monitor behavior and integrity/rollback checks.
-- Existing game installation, saves, ISO/disc image, settings and mods are **not** changed by this launcher update.
+## Package validation
+- Expanded clean portable ZIP checks to verify all three editors launch without system Python.
+- Added a real headless OGG WinForms GUI test covering the logo, taskbar, Hangout level_99 and native track detection.
+- Keeps the launcher updater, separate editor EXEs and file-integrity validation intact.
 
-**Notes:** Internet access is required for live Forge Hub sign-in. The OGG editor's optional advanced FFmpeg operation can offer an FFmpeg download when needed. Extract the official launcher ZIP intact instead of moving only the EXE.
+**Windows only.** This is a launcher/editor update, not the v2.1.0 game release. The original CTR disc image is not included or required to open the launcher/editor tools.
