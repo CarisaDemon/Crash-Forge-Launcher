@@ -5,7 +5,7 @@ import queue
 import threading
 import webbrowser
 import tkinter as tk
-from forge_account_client import AccountError, WEB_ACCOUNT
+from forge_account_client import AccountError, AccountSessionExpired, WEB_ACCOUNT
 
 BG = "#0C0F13"
 PANEL = "#171C22"
@@ -227,6 +227,8 @@ class AccountDialog:
             try:
                 result = fn()
                 self._queue.put(("success", success, result))
+            except AccountSessionExpired:
+                self._queue.put(("expired", None, "Session expired. Please sign in again."))
             except (AccountError, ValueError, OSError) as exc:
                 self._queue.put(("error", None, str(exc)))
             except Exception:
@@ -248,6 +250,13 @@ class AccountDialog:
                     callback(value)
                 except Exception:
                     self.status.set("Account result could not be displayed")
+            elif kind == "expired":
+                # Keep DPAPI credentials untouched. A new sign-in (including
+                # GitHub browser pairing) can atomically replace them.
+                self._busy = False
+                self.mode = "signin"
+                self._render()
+                self.status.set(value)
             elif kind == "pair":
                 self._pair_check_busy = False
                 if value:

@@ -6,6 +6,7 @@ are in RAM and the refresh token is persisted only with Windows DPAPI.
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
 from ctypes import wintypes
 import hashlib
 import json
@@ -35,6 +36,57 @@ MAX_RESPONSE_BYTES = 128 * 1024
 
 class AccountError(ValueError):
     pass
+
+
+class AccountSessionExpired(AccountError):
+    """Refresh token is invalid/revoked; only a fresh sign-in can replace it."""
+
+
+class AccountServiceUnavailable(AccountError):
+    """Network, rate-limit, or transient backend failure (not sign-out)."""
+
+
+@contextmanager
+def _account_refresh_mutex_disabled():
+    yield
+
+
+@contextmanager
+def _account_refresh_mutex(root):
+    """Serialize refresh-token rotation across independently launched GUI EXEs."""
+    if os.name != "nt":
+        yield
+        return
+    kernel = ctypes.windll.kernel32
+    create = kernel.CreateMutexW
+    create.argtypes = [ctypes.c_void_p, wintypes.BOOL, ctypes.c_wchar_p]
+    create.restype = ctypes.c_void_p
+    wait = kernel.WaitForSingleObject
+    wait.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    wait.restype = wintypes.DWORD
+    release = kernel.ReleaseMutex
+    release.argtypes = [ctypes.c_void_p]
+    release.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes = [ctypes.c_void_p]
+    close.restype = wintypes.BOOL
+    # Never place a token or a user's path itself in a named kernel object.
+    mutex_name = "Local\\CrashForge.Auth." + hashlib.sha256(
+        str(Path(root).resolve()).casefold().encode("utf-8")).hexdigest()[:24]
+    handle = create(None, False, mutex_name)
+    if not handle:
+        raise AccountServiceUnavailable("Account session is temporarily busy")
+    locked = False
+    try:
+        result = wait(handle, 35000)
+        if result not in (0, 0x80):  # WAIT_OBJECT_0 or WAIT_ABANDONED
+            raise AccountServiceUnavailable("Account verification is temporarily busy")
+        locked = True
+        yield
+    finally:
+        if locked:
+            release(handle)
+        close(handle)
 
 
 class _RejectRedirects(urllib.request.HTTPRedirectHandler):
@@ -187,19 +239,30 @@ class AccountClient:
                               or error.get("error") or "")
             except (UnicodeError, ValueError, AttributeError):
                 message = ""
+            is_refresh = (parsed.path == "/auth/v1/token" and
+                          urllib.parse.parse_qs(parsed.query).get("grant_type")
+                          == ["refresh_token"])
+            if is_refresh and exc.code in (400, 401):
+                # GoTrue returns HTTP 400 for invalid/rotated refresh tokens.
+                # That is NOT a network outage and must never loop forever.
+                raise AccountSessionExpired("Forge Hub session expired. Sign in again.") from None
             if exc.code == 401:
-                raise AccountError("Invalid credentials or expired session") from None
+                raise AccountSessionExpired("Forge Hub session expired. Sign in again.") from None
             if exc.code == 409:
                 raise AccountError(message[:160] or "Account is already linked") from None
             if exc.code == 429:
-                raise AccountError("Too many attempts; try again later") from None
+                raise AccountServiceUnavailable("Too many attempts; try again later") from None
             if exc.code == 422:
                 raise AccountError("Account details could not be accepted") from None
             if exc.code in (400, 403):
                 raise AccountError(message[:160] or "Authorization was rejected") from None
+            if exc.code >= 500:
+                raise AccountServiceUnavailable(
+                    "Forge Hub server is temporarily unavailable") from None
             raise AccountError("Forge Hub server returned HTTP " + str(exc.code)) from None
         except (OSError, TimeoutError) as exc:
-            raise AccountError("Could not contact Forge Hub account service") from exc
+            raise AccountServiceUnavailable(
+                "Could not contact Forge Hub account service") from exc
 
     def _save_session(self, data):
         access = data.get("access_token")
@@ -215,17 +278,60 @@ class AccountClient:
             self._expires_at = time.time() + min(86400, max(60, int(expires))) - 45
             self._persist()
 
+    def _adopt_newer_saved_refresh(self):
+        """Recover after another launcher/editor rotated the shared DPAPI token.
+
+        Called only while holding _account_refresh_mutex. Never overwrite the
+        encrypted file with an older token. Do not log or expose token values.
+        """
+        if not self.persist:
+            return False
+        try:
+            path = self.root / "session.dat"
+            if not path.is_file() or path.stat().st_size > 16384:
+                return False
+            data = json.loads(_dpapi(path.read_bytes(), decrypt=True))
+            fresh = data.get("refresh_token")
+            if data.get("schema") != 1 or not isinstance(fresh, str) or not fresh:
+                return False
+            if fresh == self._refresh:
+                return False
+            self._refresh = fresh
+            self._access = ""
+            self._expires_at = 0
+            profile = data.get("profile")
+            if isinstance(profile, dict):
+                self._cached_profile = {
+                    key: str(profile.get(key) or "")[:limit]
+                    for key, limit in (("username", 24), ("display_name", 60),
+                                       ("avatar_url", 512))
+                    if isinstance(profile.get(key, ""), str)
+                }
+            return True
+        except (OSError, ValueError, AccountError, UnicodeError, TypeError):
+            return False
+
     def token(self):
         with self._lock:
             if self._access and time.time() < self._expires_at:
                 return self._access
             if not self._refresh:
-                raise AccountError("Not signed in")
-            response = self._request(
-                SUPABASE + "/auth/v1/token?grant_type=refresh_token",
-                {"refresh_token": self._refresh})
-            self._save_session(response)
-            return self._access
+                raise AccountSessionExpired("Sign in to your Forge Hub account.")
+            with (_account_refresh_mutex(self.root) if self.persist
+                  else _account_refresh_mutex_disabled()):
+                # Another process may have refreshed while we waited.
+                self._adopt_newer_saved_refresh()
+                refresh = SUPABASE + "/auth/v1/token?grant_type=refresh_token"
+                try:
+                    response = self._request(refresh, {"refresh_token": self._refresh})
+                except AccountSessionExpired:
+                    # A legacy launcher may still be running without mutex.
+                    # Recover once from a refresh token saved by that process.
+                    if not self._adopt_newer_saved_refresh():
+                        raise
+                    response = self._request(refresh, {"refresh_token": self._refresh})
+                self._save_session(response)
+                return self._access
 
     def sign_in(self, identifier, password):
         identity = str(identifier or "").strip()

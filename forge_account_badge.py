@@ -116,6 +116,10 @@ def account_label(profile, *, connected, signed_in, pending=False, problem=None)
         status = "Sign in again"
     elif problem == "connection":
         status = "Reconnecting..."
+    elif problem == "busy":
+        status = "Try again later"
+    elif problem == "account":
+        status = "Account error"
     elif pending:
         status = "Connecting..."
     else:

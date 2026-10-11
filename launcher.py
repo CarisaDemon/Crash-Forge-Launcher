@@ -25,7 +25,8 @@ import forge_editor_config as editor_config
 import forge_mod_manager as mod_manager
 import forge_account_badge as account_badge
 from forge_dialogs import ask_mod_install, preview_newer_version
-from forge_account_client import AccountClient, AccountError
+from forge_account_client import (AccountClient, AccountError,
+    AccountSessionExpired, AccountServiceUnavailable)
 from forge_account_ui import open_account_dialog
 
 try:
@@ -385,6 +386,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_pending = bool(self.account_client.signed_in)
         self._account_badge_problem = None
         self._account_badge_busy = False
+        self._account_badge_retry_failures = 0
         self._account_badge_generation = 0
         self._account_badge_queue = queue.Queue()
         self._account_badge_avatar_url = ""
@@ -1696,6 +1698,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_pending = False
         self._account_badge_problem = None
         self._account_badge_busy = False
+        self._account_badge_retry_failures = 0
         self._account_badge_avatar_url = ""
         self._account_badge_avatar_photo = None
         self._paint_floating_header()
@@ -1713,8 +1716,15 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                          name="ForgeBadgeSignOut").start()
 
     def _account_badge_changed(self):
-        """Invoked after successful login or logout in the Account dialog."""
-        self._account_badge_refresh_async()
+        """Trust the validated dialog result; invalidate older pending checks."""
+        self._account_badge_generation += 1
+        self._account_badge_busy = False
+        self._account_badge_retry_failures = 0
+        self._account_badge_profile = self.account_client.cached_profile()
+        self._account_badge_connected = bool(self.account_client.signed_in)
+        self._account_badge_problem = None
+        self._account_badge_pending = False
+        self._paint_floating_header()
 
     def _account_badge_refresh_async(self):
         """Single nonblocking request, with safe retry on temporary failures."""
@@ -1733,11 +1743,13 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             try:
                 profile = self.account_client.profile()
                 result = (profile, True, None)
-            except AccountError as exc:
-                # A single 401 from Supabase means authentication failed, not
-                # that we should erase a user's encrypted saved session.
-                invalid = "expired session" in str(exc).lower()
-                result = (None, False, "expired" if invalid else "connection")
+            except AccountSessionExpired:
+                result = (None, False, "expired")
+            except AccountServiceUnavailable as exc:
+                problem = "busy" if "too many attempts" in str(exc).lower() else "connection"
+                result = (None, False, problem)
+            except AccountError:
+                result = (None, False, "account")
             except Exception:
                 result = (None, False, "connection")
             self._account_badge_queue.put(("profile", result, generation))
@@ -1765,11 +1777,16 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                     self._account_badge_profile = profile
                 self._account_badge_connected = bool(connected)
                 self._account_badge_problem = problem
-                if (problem == "connection" and
-                        self.account_client.signed_in):
-                    # Recheck after network recovery instead of leaving the
-                    # badge grey for the entire two-minute polling interval.
-                    self.after(25000, lambda epoch=generation:
+                if connected:
+                    self._account_badge_retry_failures = 0
+                elif problem == "connection" and self.account_client.signed_in:
+                    # Exponential backoff; stale scheduled timers become
+                    # no-ops on new requests or account changes.
+                    self._account_badge_retry_failures = min(
+                        5, self._account_badge_retry_failures + 1)
+                    delay_ms = min(180000, 25000 * (
+                        2 ** (self._account_badge_retry_failures - 1)))
+                    self.after(delay_ms, lambda epoch=generation:
                                self._account_badge_refresh_async()
                                if (self._account_badge_generation == epoch
                                    and self.account_client.signed_in) else None)
@@ -1849,6 +1866,16 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._editor_window = None
 
     def _launch_editor_tool(self, path):
+        if path and os.path.basename(str(path)).casefold() == "crashforgemodpackager.exe":
+            # A login is required even to open the exporter, not just upload.
+            # The EXE performs its own server validation to block direct runs.
+            if (not self.account_client.signed_in or
+                    self._account_badge_problem == "expired"):
+                self.status_label.configure(
+                    text="Sign in to Forge Hub in My Account to use Mod Packager.")
+                self._close_editor_selector()
+                self._open_account_dialog()
+                return
         if not path or not os.path.exists(path):
             status = getattr(self, "_editor_status_label", None)
             if status is not None:

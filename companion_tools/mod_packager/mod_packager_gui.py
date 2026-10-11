@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import ctypes
+import queue
+import threading
 import os
 from pathlib import Path
 import sys
@@ -11,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 import webbrowser
 
 from companion_tools.mod_packager import mod_packager_core as engine
+from companion_tools.mod_packager.packager_auth import check_account
 from forge_editor_geometry import initial_geometry
 from forge_editor_config import selected_game_directory, selected_game_explanation
 from forge_model_preview import (
@@ -260,8 +263,71 @@ class Packager(tk.Tk):
             messagebox.showerror("Mod ZIP not created",str(e),parent=self)
 
 
+class AccountGate(tk.Tk):
+    """No exporter widgets or mod files are accessible before online auth."""
+    def __init__(self):
+        super().__init__()
+        self.approved = False
+        self._result = queue.Queue()
+        self._busy = False
+        self.title("Crash Forge: Racing - Forge Hub Account Required")
+        self.configure(bg=DARK)
+        self.resizable(False, False)
+        self.geometry(initial_geometry(580,270) or "580x270")
+        head = tk.Frame(self, bg="#181F27")
+        head.pack(fill="x")
+        tk.Label(head, text="MOD PACKAGER  /  FORGE HUB",
+                 bg="#181F27", fg=ORANGE,
+                 font=("Bahnschrift SemiBold",16)).pack(anchor="w",padx=25,pady=14)
+        self.message = tk.StringVar(
+            value="Verifying your saved Forge Hub account securely...")
+        tk.Label(self, textvariable=self.message, bg=DARK, fg=FOREGROUND,
+                 wraplength=510, justify="left",font=("Bahnschrift",11),
+                 anchor="w").pack(fill="x",padx=25,pady=(25,12))
+        tools=tk.Frame(self,bg=DARK)
+        tools.pack(fill="x",padx=25)
+        self.retry=tk.Button(tools,text="RETRY",command=self.verify,
+                             state="disabled",bg="#75330F",fg=FOREGROUND,
+                             activebackground=ORANGE,relief="flat",
+                             font=("Bahnschrift SemiBold",10),padx=18,pady=9)
+        self.retry.pack(side="left",padx=(0,10))
+        tk.Button(tools,text="CLOSE",command=self.destroy,
+                  bg="#252D35",fg=FOREGROUND,
+                  relief="flat",padx=16,pady=9).pack(side="left")
+        self.after(50,self.verify)
+        self.after(120,self._poll)
+
+    def verify(self):
+        if self._busy:return
+        self._busy=True
+        self.retry.configure(state="disabled")
+        self.message.set("Verifying your Forge Hub session...")
+        def worker():
+            self._result.put(check_account())
+        threading.Thread(target=worker,daemon=True,
+                         name="ForgeModPackagerAuthentication").start()
+
+    def _poll(self):
+        try:
+            accepted,status=self._result.get_nowait()
+        except queue.Empty:
+            self.after(120,self._poll)
+            return
+        self._busy=False
+        if accepted:
+            self.approved=True
+            self.destroy()
+            return
+        self.message.set(status)
+        self.retry.configure(state="normal")
+        self.after(120,self._poll)
+
+
 def main():
-    Packager().mainloop()
+    gate=AccountGate()
+    gate.mainloop()
+    if gate.approved:
+        Packager().mainloop()
 
 def _self_test():
     """No GUI, assets or installed Python needed for packaged smoke."""

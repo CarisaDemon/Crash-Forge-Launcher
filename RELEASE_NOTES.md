@@ -1,15 +1,13 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.49/forge-news-v0.3.49.webp)
+![Crash Forge Launcher official background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.50/forge-news-v0.3.50.webp)
 
-# Crash Forge: Racing Launcher v0.3.49 - Editor Expansion & Account Reliability
+# Crash Forge: Racing Launcher v0.3.50 - Forge Hub Session & Mod Packager Account Fix
 
-Windows maintenance and creator-tools release.
+Windows snapshot / corrective update to v0.3.49.
 
-- New **Mod Packager** is the fourth Editor tool, alongside OGG, CSEQ/MIDI and Model Importer. Import native Character, Kart, Wheels or Track files, validate them and export structured ZIP packages for the existing Forge Hub review system. Runs as a separate Windows GUI without visible console windows.
-- **Live 3D previews in both Model Importer and Mod Packager** for characters, karts, wheels (Wavefront OBJ with MTL textures) and native CTR tracks (LEV geometry and vertex colors). Mouse drag rotates and scroll zooms; image thumbnails show filenames and sizes. Note: full VRM atlas decoding and in-game materials are not yet available for track previews.
-- **Unified Kart Variants:** one texture manager instead of duplicated controls, auto-detection of PNG/BMP atlases, visible thumbnails, individual selection and user-editable display names. Custom names (including patterns and multicolored skins) are written to native kart.ini [colors] instead of being limited to Blue/Red/Lime/Pink. The original OBJ, MTL and offsets are preserved. Up to 12 variants including original, matching the game.
-- **One launcher-selected game installation** for all four tools. Editor GUI uses Launcher Settings directly; manual game-root browse and source-tree fallback are removed. No automatic replacement or searching across other drives. Source file pickers (MIDI, OGG, OBJ, LEV, VRM, textures) remain independent.
-- **Editor selector monitor fix**: borderless 2x2 tool selector remains with the launcher even when that monitor has negative virtual-desktop coordinates. The tools open on the launcher's monitor.
-- **Forge Hub account status repair**: a temporary server/network error displays Reconnecting instead of incorrectly implying logout; automatic retry after 25 seconds, preserved encrypted account metadata, and an explicit Sign in again state when Supabase rejects an expired session.
-- The Forge Hub website already offers a native guided Mod Packager with in-browser ZIP creation, export and GitHub-authenticated private review; the launcher and game continue to update independently.
+- **Forge Hub account connection:** Supabase can reject expired/rotated refresh tokens with HTTP 400. The launcher now treats these as expired credentials, rather than looping on Reconnecting forever. It clearly offers **Sign in again**, without deleting your account or personal data. Genuine connectivity issues use bounded retry with backoff.
+- **Token safety across multiple tools:** refresh-token renewal is synchronized between the launcher and separate editor EXEs on Windows; an editor can adopt the latest DPAPI-protected session when another process has already rotated it.
+- **Sign-in required for Mod Packager:** selecting it in the launcher prompts for Forge Hub authentication when signed out. Opening the bundled CrashForgeModPackager.exe directly also requires a **server-verified** Forge Hub session before any packaging interface opens. The same Forge Hub user identity is used; no additional accounts are created.
+- **Prior v0.3.49 features retained:** Model Importer, OGG and CSEQ share the game path saved in Launcher Settings, the Editor selector remains on the launcher's monitor, native Character/Kart/Wheels/Track Mod Packager includes previews, and arbitrary kart texture names remain supported.
+- **Release artwork:** this version uses the launcher’s own Fondo.png rather than reusing unrelated illustrations.
 
-Official game data, saves, user mods and personal account tokens are never included. Any ZIP uploaded by a creator remains subject to Forge Hub moderation.
+A revoked/expired session cannot be silently restored by the launcher; if you see Sign in again after upgrading, authorize once in My Account (GitHub sign-in is supported). No user mod, ISO, save, secret token or game executable is distributed.

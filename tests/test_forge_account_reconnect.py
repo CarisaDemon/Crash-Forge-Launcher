@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock
 
 from forge_account_badge import account_label
-from forge_account_client import AccountError
+from forge_account_client import AccountError, AccountSessionExpired, AccountServiceUnavailable
 from launcher import Launcher
 
 
@@ -18,6 +18,7 @@ class AccountConnectionRetryTests(unittest.TestCase):
             account_client=client,
             _account_badge_generation=0,
             _account_badge_busy=False,
+            _account_badge_retry_failures=0,
             _account_badge_pending=False,
             _account_badge_problem=None,
             _account_badge_connected=False,
@@ -46,7 +47,7 @@ class AccountConnectionRetryTests(unittest.TestCase):
         self.assertEqual(label["status"],"Sign in again")
 
     def test_temporary_server_failure_schedules_background_retry(self):
-        app=self.fake_launcher(AccountError("Could not contact Forge Hub account service"))
+        app=self.fake_launcher(AccountServiceUnavailable("Could not contact Forge Hub account service"))
         Launcher._account_badge_refresh_async(app)
         kind,payload,generation=app._account_badge_queue.get(timeout=5)
         app._account_badge_queue.put((kind,payload,generation))
@@ -60,7 +61,7 @@ class AccountConnectionRetryTests(unittest.TestCase):
         self.assertIn(25000,[call.args[0] for call in app.after.call_args_list])
 
     def test_expired_session_never_queues_network_retry(self):
-        app=self.fake_launcher(AccountError("Invalid credentials or expired session"))
+        app=self.fake_launcher(AccountSessionExpired("Forge Hub session expired. Sign in again."))
         Launcher._account_badge_refresh_async(app)
         kind,payload,generation=app._account_badge_queue.get(timeout=5)
         app._account_badge_queue.put((kind,payload,generation))

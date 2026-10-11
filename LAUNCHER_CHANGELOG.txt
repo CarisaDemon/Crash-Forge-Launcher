@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.50
+- Fix the endless Reconnecting loop for expired or rotated Forge Hub refresh tokens.
+- Coordinate refresh tokens across Windows launcher and editor processes.
+- Prompt clearly to sign in again when credentials are truly expired.
+- Require a verified Forge Hub account to open Mod Packager, even directly.
+- Keep v0.3.49 editor/preview fixes; use original launcher background for NEWS.
+
 v0.3.49
 - Add a fourth native Editor tool: Mod Packager for Character, Kart, Wheels and Track ZIPs.
 - Add interactive OBJ/LEV 3D previews and texture thumbnails to both model tools.

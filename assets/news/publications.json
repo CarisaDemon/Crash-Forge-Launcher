@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.50",
+      "title": "Forge Hub Session & Mod Packager Account Fix",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.50",
+      "notes": [
+        "Fix Reconnecting loops caused by invalid or rotated Forge Hub session tokens.",
+        "Synchronize token refresh across launcher and portable editor programs.",
+        "Require signed-in, server-verified Forge Hub account to open Mod Packager.",
+        "Preserve v0.3.49 previews, mod creator tools and manually selected game folder."
+      ]
+    },
+    {
       "version": "0.3.49",
       "title": "Mod Packager, Live 3D Previews & Editor Fixes",
       "date": "2026-10-11",
