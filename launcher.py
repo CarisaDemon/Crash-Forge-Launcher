@@ -18,6 +18,7 @@ import forge_mod_metadata as modmeta
 import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
+import forge_game_news as game_news
 import forge_editor_registry as editor_registry
 import forge_editor_geometry as editor_geometry
 import forge_mod_manager as mod_manager
@@ -378,8 +379,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._button_layout_scale = 1.0
         self.account_client = AccountClient()
         self._account_dialog = None
-        self._account_badge_profile = {}
+        self._account_badge_profile = self.account_client.cached_profile()
         self._account_badge_connected = False
+        self._account_badge_pending = bool(self.account_client.signed_in)
         self._account_badge_generation = 0
         self._account_badge_queue = queue.Queue()
         self._account_badge_avatar_url = ""
@@ -1467,6 +1469,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             self._account_badge_profile,
             connected=self._account_badge_connected,
             signed_in=active,
+            pending=self._account_badge_pending,
         )
         tag = ("header", "forge_account_chip")
         top.create_rectangle(x1, y1, x2, y2, fill="#10151B",
@@ -1686,6 +1689,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
     def _account_badge_clear(self):
         self._account_badge_profile = {}
         self._account_badge_connected = False
+        self._account_badge_pending = False
         self._account_badge_avatar_url = ""
         self._account_badge_avatar_photo = None
         self._paint_floating_header()
@@ -1738,6 +1742,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 continue
             if kind == "profile":
                 profile, connected = payload
+                self._account_badge_pending = False
                 if profile is not None:
                     self._account_badge_profile = profile
                 self._account_badge_connected = bool(connected)
@@ -2751,8 +2756,17 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         ).pack(anchor="w", pady=(3, 0))
 
 
+    def _featured_news_update(self):
+        """Choose the newest real publication from TWO independent products."""
+        launch = getattr(self, "launcher_news_history", None)
+        if not launch:
+            launch = news_history.local_publications(BASE_DIR)
+        all_news = game_news.combined_news(
+            launch, getattr(self, "game_news_history", []))
+        return all_news[0] if all_news else None
+
     def _paint_hero(self, event=None):
-        """Feature the latest publication, with its OWN illustration."""
+        """Feature the newest game OR launcher release by publication instant."""
         c = event.widget if event is not None else getattr(self, "hero_canvas", None)
         if c is None:
             return
@@ -2760,6 +2774,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         w = max(c.winfo_width(), 1)
         h = max(c.winfo_height(), 1)
         s = getattr(self, "ui_scale", 1.0)
+        featured = self._featured_news_update()
+        is_game = bool(featured and featured.get("source") == "GAME")
 
         if not self._draw_fondo_image(c, "hero"):
             c.create_rectangle(0, 0, w, h,
@@ -2778,16 +2794,13 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                                fill="#0C0F14", outline="#4B5057",
                                width=1, tags="hero")
             if Image is not None and ImageTk is not None:
-                archived = getattr(self, "launcher_news_history", None)
-                if archived is None:
-                    archived = news_history.local_publications(BASE_DIR)
-                latest = archived[0] if archived else None
-                release_version = latest["version"] if latest else APP_VERSION
-                # Never show the Model Importer picture on the Forge Hub post
-                # or vice versa. Only exact release-specific artwork qualifies.
+                # The game has its own release feed; never use an image
+                # belonging to a *launcher version* for a game announcement.
+                release_version = featured["version"] if featured else APP_VERSION
                 image_path = (
-                    news_history.artwork_file(BASE_DIR, release_version)
-                    or news_history.garage_fallback(BASE_DIR)
+                    news_history.garage_fallback(BASE_DIR) if is_game else
+                    (news_history.artwork_file(BASE_DIR, release_version)
+                     or news_history.garage_fallback(BASE_DIR))
                 )
                 try:
                     source_key = (
@@ -2827,12 +2840,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         c.create_line(8, 8, min(w-8, 275), 8,
                       fill=COLORS["orange"], width=2, tags="hero")
 
-        archived = getattr(self, "launcher_news_history", None)
-        if archived is None:
-            archived = news_history.local_publications(BASE_DIR)
-        featured = archived[0] if archived else None
         if featured:
-            release = "v" + featured["version"]
+            release = featured.get("display_version") or "v" + featured["version"]
             highlights = featured.get("notes", [])[:5]
         else:
             release, highlights = services.real_launcher_changelog(
@@ -2843,19 +2852,23 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         copy_width = max(180, left_w - x - 38)
         c.create_rectangle(x, 34, x+5, 49,
                            fill=COLORS["orange"], outline="", tags="hero")
-        c.create_text(x+16, 42, text="LATEST UPDATE  /  " + release.upper(),
+        c.create_text(x+16, 42,
+                      text=("LATEST GAME  /  " if is_game else
+                            "LATEST LAUNCHER  /  ") + release.upper(),
                       fill="#F5A660", anchor="w",
                       font=("Bahnschrift SemiBold", max(8, int(round(10*s)))),
                       tags="hero")
 
         title_size = max(19, int(round((25 if w >= 720 else 21)*s)))
         version_shown = featured["version"] if featured else APP_VERSION
-        hero_title = ("MODEL IMPORTER 1.8" if version_shown == "0.3.38" else
+        hero_title = ("GAME UPDATE" if is_game else
+                      "MODEL IMPORTER 1.8" if version_shown == "0.3.38" else
                       "FORGE HUB" if version_shown == "0.3.37" else "WHAT'S NEW")
         c.create_text(x, 85,
                       text=hero_title, anchor="w", fill="#F4F2ED",
                       font=("Bahnschrift SemiBold", title_size), tags="hero")
-        c.create_text(x, 119, text="CRASH FORGE LAUNCHER",
+        c.create_text(x, 119, text=("CRASH FORGE: RACING" if is_game
+                                    else "CRASH FORGE LAUNCHER"),
                       anchor="w", fill=COLORS["orange"],
                       font=("Bahnschrift SemiBold",
                             max(11, int(round(14*s)))), tags="hero")

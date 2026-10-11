@@ -22,7 +22,8 @@ class FeaturedReleaseTests(unittest.TestCase):
         launcher = (ROOT / "launcher.py").read_text(encoding="utf-8")
         news = (ROOT / "forge_live_ui.py").read_text(encoding="utf-8")
         self.assertIn('ImageOps.contain(', launcher)
-        self.assertIn('text="LATEST UPDATE  /  "', launcher)
+        self.assertIn('"LATEST GAME  /  "', launcher)
+        self.assertIn('"LATEST LAUNCHER  /  "', launcher)
         self.assertIn('text="MORE DETAILS IN NEWS', launcher)
         self.assertIn('real_launcher_changelog(', launcher)
         self.assertIn('news_history.artwork_file(', launcher)
@@ -31,7 +32,7 @@ class FeaturedReleaseTests(unittest.TestCase):
 
     def test_release_highlights_have_english_summary_and_version(self):
         version, highlights = forge_services.real_launcher_changelog(str(ROOT), limit=3)
-        self.assertTrue(version.startswith("v0.3.46"))
+        self.assertTrue(version.startswith("v0.3.47"))
         self.assertEqual(len(highlights), 3)
         self.assertTrue(all(15 <= len(row) < 100 for row in highlights))
 

@@ -109,13 +109,15 @@ def combined_news(launcher_entries, game_entries):
             **entry, "identity": "GAME/" + tag,
             "display_version": tag,
         })
-    # The two products do NOT share numbering. A game publication on the
-    # same day ranks before older launcher material, and links stay distinct.
-    return sorted(combined,
-                  key=lambda a: (str(a.get("date","")),
-                                 1 if a.get("source")=="GAME" else 0,
-                                 str(a.get("display_version",""))),
-                  reverse=True)
+    # Order by the full real publication timestamp, even on the same day.
+    # Never compare game and launcher *version numbers* against each other.
+    def chronology(entry):
+        timestamp = str(entry.get("published_at") or "")
+        if not timestamp:
+            date = str(entry.get("date") or "")
+            timestamp = date + "T00:00:00Z" if date else ""
+        return timestamp, str(entry.get("identity", ""))
+    return sorted(combined, key=chronology, reverse=True)
 
 
 def _marker():

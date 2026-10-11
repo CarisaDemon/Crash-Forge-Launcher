@@ -16,10 +16,10 @@ _VERSION = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 _IMAGES = {"0.3.37": "forge-news-v0.3.37.webp",
            "0.3.38": "forge-news-v0.3.38.webp",
-           "0.3.39": "forge-news-v0.3.39.webp", "0.3.41": "forge-news-v0.3.41.webp", "0.3.42": "forge-news-v0.3.42.webp", "0.3.43": "forge-news-v0.3.43.webp", "0.3.44": "forge-news-v0.3.44.webp", "0.3.45": "forge-news-v0.3.45.webp", "0.3.46": "forge-news-v0.3.46.webp"}
+           "0.3.39": "forge-news-v0.3.39.webp", "0.3.41": "forge-news-v0.3.41.webp", "0.3.42": "forge-news-v0.3.42.webp", "0.3.43": "forge-news-v0.3.43.webp", "0.3.44": "forge-news-v0.3.44.webp", "0.3.45": "forge-news-v0.3.45.webp", "0.3.46": "forge-news-v0.3.46.webp", "0.3.47": "forge-news-v0.3.47.webp"}
 _TITLES = {"0.3.37": "Forge Hub Website Is Live",
            "0.3.38": "Model Importer v1.8 — Redesigned",
-           "0.3.39": "Forge Hub Mod Manager", "0.3.41": "File verification system", "0.3.42": "Mod folder separation", "0.3.43": "Forge Hub Accounts & Multi-Monitor Fixes", "0.3.44": "Music Toolkits: Custom Tracks & Portable Editors", "0.3.45": "BIG UPDATE: Editors, Monitors & Independent NEWS", "0.3.46": "Snapshot: Multi-Monitor Window Fixes"}
+           "0.3.39": "Forge Hub Mod Manager", "0.3.41": "File verification system", "0.3.42": "Mod folder separation", "0.3.43": "Forge Hub Accounts & Multi-Monitor Fixes", "0.3.44": "Music Toolkits: Custom Tracks & Portable Editors", "0.3.45": "BIG UPDATE: Editors, Monitors & Independent NEWS", "0.3.46": "Snapshot: Multi-Monitor Window Fixes", "0.3.47": "Launcher Fix: Play, Repair, Accounts and Latest NEWS"}
 
 
 def valid_version(v):
@@ -61,7 +61,14 @@ def normalized(raw):
     notes = raw.get("notes")
     if not isinstance(notes, list):
         notes = []
+    # Retain the exact publication instant, not only YYYY-MM-DD. Game and
+    # launcher releases are independent and can publish hours apart.
+    published_at = str(raw.get("published_at") or "")[:32]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})",
+                        published_at):
+        published_at = ""
     return {"version": version, "title": title[:95], "date": date,
+            "published_at": published_at,
             "notes": [s for s in (_plain(t) for t in notes[:8]) if s],
             "url": release_url(version)}
 
@@ -78,6 +85,8 @@ def merge_history(*collections):
                 previous = stored.get(current["version"], {})
                 current["notes"] = current["notes"] or previous.get("notes", [])
                 current["date"] = current["date"] or previous.get("date", "")
+                current["published_at"] = (current["published_at"] or
+                                           previous.get("published_at", ""))
                 stored[current["version"]] = current
     return sorted(stored.values(),
                   key=lambda x: tuple(map(int, x["version"].split("."))),

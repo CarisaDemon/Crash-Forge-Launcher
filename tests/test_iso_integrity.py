@@ -164,11 +164,13 @@ class TestIntegrity(unittest.TestCase):
             latest_game_release=None,
             status_label=label,
             _refresh_real_install_ui=mock.Mock(),
+            after=mock.Mock(),
         )
         with mock.patch.object(live.services, "real_game_status", return_value={
             "installed": True, "exe_path": "C:/a-fake-game/ctr-native.exe"
-        }), mock.patch.object(live, "available_game_update", return_value=None,
-                             create=True), mock.patch.object(
+        }), mock.patch.object(live.game_launch,"launch_issue",return_value=""), mock.patch.object(
+            live, "available_game_update", return_value=None,
+            create=True), mock.patch.object(
             live.iso_integrity, "start_background_check",
             side_effect=RuntimeError("ISO checker unavailable")
         ), mock.patch.object(live.subprocess, "Popen") as game_spawn:
@@ -180,7 +182,7 @@ class TestIntegrity(unittest.TestCase):
             self.assertEqual(kwargs["creationflags"],
                              live.subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             self.assertEqual(kwargs["stdout"], live.subprocess.DEVNULL)
-        label.configure.assert_called_with(text="Started installed Crash Forge game.")
+        label.configure.assert_called_with(text="Starting Crash Forge: Racing...")
 
     def test_read_error_is_report_only(self):
         with tempfile.TemporaryDirectory() as temp:

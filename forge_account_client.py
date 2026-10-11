@@ -93,6 +93,7 @@ class AccountClient:
         self._refresh = ""
         self._expires_at = 0.0
         self._user = {}
+        self._cached_profile = {}  # Display-safe identity, NOT a second token store.
         self._pending = None
         if self.persist:
             self.restore()
@@ -100,6 +101,11 @@ class AccountClient:
     @property
     def signed_in(self):
         return bool(self._refresh or self._access)
+
+    def cached_profile(self):
+        """Previous validated public identity, bound to the encrypted session."""
+        with self._lock:
+            return dict(self._cached_profile) if self.signed_in else {}
 
     def restore(self):
         path = self.root / "session.dat"
@@ -113,6 +119,15 @@ class AccountClient:
             self._refresh = value
             self._access = ""
             self._expires_at = 0
+            cached = data.get("profile")
+            if isinstance(cached, dict):
+                self._cached_profile = {
+                    field: str(cached.get(field) or "")[:limit]
+                    for field, limit in (("username", 24),
+                                         ("display_name", 60),
+                                         ("avatar_url", 512))
+                    if isinstance(cached.get(field, ""), str)
+                }
             return True
         except (OSError, AccountError, ValueError, TypeError, UnicodeError):
             return False
@@ -122,7 +137,8 @@ class AccountClient:
             return
         if not self._refresh:
             return
-        data = json.dumps({"schema": 1, "refresh_token": self._refresh},
+        data = json.dumps({"schema": 1, "refresh_token": self._refresh,
+                           "profile": self._cached_profile},
                           separators=(",", ":")).encode("utf-8")
         encoded = _dpapi(data)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -226,6 +242,8 @@ class AccountClient:
                 raise AccountError("Invalid username or email")
             data = self._request(BRIDGE, {
                 "action": "username_login", "identifier": username, "password": password})
+        with self._lock:
+            self._cached_profile = {}  # A different account may be signing in.
         self._save_session(data)
         return self.profile()
 
@@ -244,6 +262,8 @@ class AccountClient:
         })
         signed = response.get("session") or (response if response.get("access_token") else None)
         if signed:
+            with self._lock:
+                self._cached_profile = {}
             self._save_session(signed)
             self.save_username(username)
             return {"requires_confirmation": False}
@@ -289,8 +309,7 @@ class AccountClient:
         github_avatar = (
             github_identity.get("avatar_url") or raw_metadata.get("avatar_url") or ""
         ) if "github" in providers else ""
-        self._user = user
-        return {
+        result = {
             "id": uid,
             "email": str(user.get("email") or ""),
             "username": str(account.get("username") or ""),
@@ -299,6 +318,17 @@ class AccountClient:
             "avatar_url": str(github_avatar)[:512],
             "providers": sorted(providers),
         }
+        with self._lock:
+            self._user = user
+            self._cached_profile = {
+                key: result[key]
+                for key in ("username", "display_name", "avatar_url")
+            }
+            try:
+                self._persist()  # Persist public display name with the DPAPI token.
+            except (OSError, AccountError):
+                pass  # Account stays signed in even if the name cannot be cached.
+        return result
 
     def save_username(self, username, display_name=""):
         username = str(username or "").strip().lower()
@@ -366,6 +396,9 @@ class AccountClient:
             after = str(session.get("user", {}).get("id") or "")
             if after != before:
                 raise AccountError("The browser authorized a different Forge Hub account")
+        if pending["mode"] != "link":
+            with self._lock:
+                self._cached_profile = {}
         self._save_session(session)
         self._pending = None
         return self.profile()
@@ -377,6 +410,7 @@ class AccountClient:
             self._refresh = ""
             self._expires_at = 0
             self._user = {}
+            self._cached_profile = {}
             self._pending = None
             try:
                 (self.root / "session.dat").unlink(missing_ok=True)

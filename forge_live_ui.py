@@ -16,6 +16,7 @@ import forge_launcher_updates as launcher_updates
 import forge_launcher_integrity as launcher_integrity
 import forge_news_history as news_history
 import forge_game_news as game_news
+import forge_game_launch as game_launch
 import forge_iso_integrity as iso_integrity
 from forge_version_dialog import ask_play_outdated
 from forge_dialogs import ask_mod_install, ask_game_update
@@ -284,25 +285,31 @@ class ForgeLiveMixin:
         for index, item in enumerate(history):
             version = item["version"]
             is_game = item.get("source") == "GAME"
-            # Game releases have independent text-only cards until they ship
-            # their own art: never show a launcher illustration as game art.
-            is_featured = (not is_game and
-                           (index < 2 or bool(news_history.artwork_file(
+            # Both products get prominent illustrated cards. A game release
+            # without specific artwork uses neutral brand background, never
+            # an unrelated launcher-version screenshot.
+            is_featured = (index < 2 or
+                           (not is_game and bool(news_history.artwork_file(
                                self._forge_base_dir(), version))))
             row = Frame(self.news_rows, bg="#111419",
                         highlightbackground="#30363E", highlightthickness=1)
             row.pack(fill="x", pady=(0, 9), padx=1)
 
             if is_featured:
-                image_path = (news_history.artwork_file(self._forge_base_dir(), version)
-                              or news_history.garage_fallback(self._forge_base_dir()))
+                image_path = (
+                    news_history.garage_fallback(self._forge_base_dir()) if is_game
+                    else (news_history.artwork_file(self._forge_base_dir(), version)
+                          or news_history.garage_fallback(self._forge_base_dir())))
                 banner = Canvas(row, height=184, bg="#0D1014", bd=0,
                                 highlightthickness=0)
                 banner.pack(fill="x")
 
                 date = item["date"]
+                identity = item["identity"]
+                product = "GAME" if is_game else "LAUNCHER"
                 def paint_banner(event=None, canvas=banner, image_file=image_path,
-                                 release_version=version, published=date):
+                                 release_version=version, published=date,
+                                 article_id=identity, product_name=product):
                     width = max(120, canvas.winfo_width())
                     height = 184
                     canvas.delete("all")
@@ -318,7 +325,7 @@ class ForgeLiveMixin:
                                     (max(width - 16, 1), 143),
                                     method=Image.Resampling.LANCZOS)
                             photo = ImageTk.PhotoImage(picture)
-                            self._news_art_photos[release_version] = photo
+                            self._news_art_photos[article_id] = photo
                             canvas.create_image(width//2, 72, image=photo,
                                                 anchor="center")
                         except (ImportError, OSError, ValueError):
@@ -329,7 +336,7 @@ class ForgeLiveMixin:
                                             fill="#0B0E12", outline="")
                     canvas.create_text(
                         15, 166, anchor="w",
-                        text="CRASH FORGE  /  LAUNCHER v" + release_version,
+                        text="CRASH FORGE  /  " + product_name + " v" + release_version,
                         fill="#F3F2EF", font=("Bahnschrift SemiBold", 11))
                     canvas.create_text(width - 12, 166, anchor="e",
                                        text=published,
@@ -1001,13 +1008,28 @@ class ForgeLiveMixin:
         return ask_play_outdated(self, context, icon_path=icon_path)
 
     def _play_installed_game(self):
+        """Launch only from the explicit Settings folder, with visible errors."""
+        if getattr(self, "game_update_busy", False):
+            self.status_label.configure(
+                text="Wait for the game update to finish before playing.")
+            return
+        issue = game_launch.launch_issue(self.game_install_path)
+        if issue:
+            self.status_label.configure(text="PLAY BLOCKED: " + issue)
+            self.set_download_status(
+                percent=0, state="GAME DATA NEEDED", filename=issue,
+                amount=self.game_install_path or "No game folder selected",
+                time_remaining="Installation folder unchanged")
+            messagebox.showwarning(
+                "Crash Forge: Racing - Play",
+                issue + "\n\nThe launcher will not search for, copy or replace original disc files.",
+                parent=self)
+            return
+
         state = services.real_game_status(self.game_install_path)
         if not state["installed"]:
-            self.status_label.configure(text="Cannot play: ctr-native.exe is not in the selected game folder.")
+            self.status_label.configure(text="Cannot play: ctr-native.exe is missing.")
             self._refresh_real_install_ui()
-            return
-        if getattr(self, "game_update_busy", False):
-            self.status_label.configure(text="Wait for the game update to finish before playing.")
             return
         new_version = available_game_update(
             self.game_install_path, getattr(self, "latest_game_release", None))
@@ -1015,44 +1037,61 @@ class ForgeLiveMixin:
             self.status_label.configure(
                 text="Game launch cancelled; no files or versions were changed.")
             return
-        # Independent CTR-U audit always runs asynchronously, even if modded.
         try:
             iso_integrity.start_background_check(self.game_install_path, "play")
         except Exception:
-            pass  # Even verifier failures cannot stop offline PLAY.
+            pass
         try:
-            # The native game may be a CONSOLE-subsystem binary. Suppress
-            # the command window while preserving its normal SDL graphics.
-            hidden = (subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-            subprocess.Popen([state["exe_path"]],
-                             cwd=self.game_install_path,
-                             creationflags=hidden,
-                             stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            self.status_label.configure(text="Started installed Crash Forge game.")
+            # The console-subsystem game must never flash a command prompt.
+            hidden = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            process = subprocess.Popen(
+                [state["exe_path"]], cwd=self.game_install_path,
+                creationflags=hidden, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.status_label.configure(text="Starting Crash Forge: Racing...")
+            # Popen succeeds even when the executable immediately fails.
+            # Check once on the UI thread without blocking the launcher.
+            self.after(1200, lambda p=process: self._report_game_launch(p))
         except OSError as exc:
             self.status_label.configure(text="Could not start the game: " + str(exc))
+            messagebox.showerror("Crash Forge: Racing - Play",
+                                 "Windows could not launch ctr-native.exe:\n" + str(exc),
+                                 parent=self)
+
+    def _report_game_launch(self, process):
+        try:
+            exit_code = process.poll()
+        except (OSError, ValueError):
+            return
+        if exit_code is None:
+            self.status_label.configure(text="Crash Forge: Racing is running.")
+        else:
+            self.status_label.configure(
+                text="Game closed immediately (exit code " + str(exit_code) +
+                     "). Check the original disc and game files.")
+            messagebox.showwarning(
+                "Crash Forge: Racing - Launch failed",
+                "The game exited immediately (code " + str(exit_code) +
+                "). Verify assets/ctr-u.bin and the selected game installation.",
+                parent=self)
 
     def _check_game_update(self):
         """UPDATE always checks GitHub Releases; install requires explicit consent."""
         self._request_release_check(manual=True, request_install=True)
 
     def _check_local_game_files(self):
+        """REPAIR prepares root mods/, never requires obsolete assets/mods/."""
         if self.game_update_busy:
             self.status_label.configure(
                 text="Wait for the verified GitHub game update to finish.")
             return
-        status = services.real_game_status(self.game_install_path)
-        mods = os.path.join(self.game_install_path, "assets", "mods")
-        if not status["installed"]:
-            summary = "ctr-native.exe missing at selected location"
-        elif not os.path.isdir(mods):
-            summary = "Game found; assets/mods folder missing"
-        else:
-            summary = "Game executable and assets/mods present. This is a basic check, not a full repair."
+        repair = game_launch.repair_local_files(self.game_install_path)
+        good = bool(repair.get("ok"))
+        detail = str(repair.get("detail") or "Game file check failed.")
         self.set_download_status(
-            percent=100 if status["installed"] else 0,
-            state="LOCAL FILE CHECK", filename=summary,
-            amount=self.game_install_path, time_remaining="No files modified")
-        self.status_label.configure(text=summary)
+            percent=(50 if repair.get("missing_disc") else 100) if good else 0,
+            state="LOCAL REPAIR" if good else "REPAIR NEEDS ATTENTION",
+            filename=detail,
+            amount=self.game_install_path or "Select a game folder",
+            time_remaining="No personal mods, saves or disc data replaced")
+        self.status_label.configure(text=detail)

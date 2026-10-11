@@ -1,4 +1,4 @@
-"""NEWS must retain older releases and keep v0.3.37 / v0.3.38 separate.
+﻿"""NEWS must retain older releases and keep v0.3.37 / v0.3.38 separate.
 
 No browser, network, game or GUI is started by these tests.
 """
@@ -32,8 +32,8 @@ class NewsHistoryTests(unittest.TestCase):
     def test_existing_ten_publications_are_preserved_offline(self):
         articles = history.local_publications(ROOT)
         versions = [item["version"] for item in articles]
-        self.assertEqual(len(articles), 17)
-        self.assertEqual(versions[:3], ["0.3.46", "0.3.45", "0.3.44"])
+        self.assertEqual(len(articles), 18)
+        self.assertEqual(versions[:3], ["0.3.47", "0.3.46", "0.3.45"])
         self.assertIn("0.3.28", versions)
         self.assertEqual(len(versions), len(set(versions)))
         self.assertTrue(all(item["url"].startswith(history.GITHUB_RELEASES)
@@ -48,14 +48,15 @@ class NewsHistoryTests(unittest.TestCase):
              "notes": ["Future changes"]},
         ]
         merged = history.save_history(patch, ROOT)
-        self.assertEqual(len(merged), 18)
-        self.assertEqual(merged[0]["version"], "0.3.46")
+        self.assertEqual(len(merged), 19)
+        self.assertEqual(merged[0]["version"], "0.3.47")
         self.assertEqual([x["version"] for x in merged].count("0.3.38"), 1)
-        self.assertEqual(merged[8]["notes"], ["Updated Model Importer announcement"])
+        self.assertEqual(next(x["notes"] for x in merged if x["version"] == "0.3.38"),
+                         ["Updated Model Importer announcement"])
         self.assertIn("0.3.28", [i["version"] for i in merged])
         again = history.save_history(patch, ROOT)
         self.assertEqual(merged, again)
-        self.assertEqual(len(history.local_publications(ROOT)), 18)
+        self.assertEqual(len(history.local_publications(ROOT)), 19)
 
     def test_release_urls_cannot_be_redirected_by_cache_content(self):
         fake = [{"version": "0.3.37",
@@ -157,7 +158,7 @@ class NewsHistoryTests(unittest.TestCase):
         self.assertIn("self._scheduled_news_history_check", ui)
         self.assertIn("--add-data $historyAsset", build)
         self.assertIn("@newsArtArguments", build)
-        self.assertIn("is_featured = (not is_game and", ui)
+        self.assertIn("is_featured = (index < 2 or", ui)
         workflow = (ROOT / ".github" / "workflows" / "windows-release.yml").read_text(
             encoding="utf-8")
         self.assertIn('gh release upload $tag $file --clobber', workflow)
@@ -168,10 +169,10 @@ class NewsHistoryTests(unittest.TestCase):
 
     def test_image_update_does_not_create_a_new_version(self):
         old = history.local_publications(ROOT)
-        self.assertEqual(old[0]["version"], "0.3.46")
+        self.assertEqual(old[0]["version"], "0.3.47")
         self.assertTrue(history.release_url("v0.3.38").endswith("/tag/v0.3.38"))
         self.assertTrue(history.release_url("v0.3.37").endswith("/tag/v0.3.37"))
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.46")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.47")
 
 
 if __name__ == "__main__":

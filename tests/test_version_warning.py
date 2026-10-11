@@ -1,4 +1,4 @@
-﻿"""No-focus tests for verified-game-version popup and PLAY behavior."""
+"""No-focus tests for verified-game-version popup and PLAY behavior."""
 import inspect
 from pathlib import Path
 import sys
@@ -54,6 +54,7 @@ class VersionWarningTests(unittest.TestCase):
         fake_status = {"installed": True, "exe_path": r"C:\Fake\ctr-native.exe"}
         with patch.object(releases, "game_installed_version", return_value=version), \
              patch.object(live.services, "real_game_status", return_value=fake_status), \
+             patch.object(live.game_launch, "launch_issue", return_value=""), \
              patch.object(live.subprocess, "Popen") as launch:
             live.ForgeLiveMixin._play_installed_game(app)
         return launch

@@ -1,5 +1,11 @@
 Crash Forge: Racing Launcher
 
+v0.3.47
+- Play now clearly reports missing original CTR data and early game launch failures.
+- Repair prepares root mods/ without requiring old assets/mods/ or changing personal files.
+- Latest game or launcher release takes the front NEWS spotlight by publication time.
+- Signed-in account profile persists across updates using encrypted session metadata.
+
 v0.3.46
 - Snapshot: fix window positions on monitors with negative desktop coordinates.
 - Fix launcher move/resize/maximize and account/Editor/Settings floating-window placement.

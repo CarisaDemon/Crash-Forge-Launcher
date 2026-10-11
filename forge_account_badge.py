@@ -98,19 +98,23 @@ def account_popup_position(parent_x, parent_y, badge_layout,
     y = max(top + 3, min(desired_y, bottom - popup_height - 3))
     return (x, y)
 
-def account_label(profile, *, connected, signed_in):
-    """Green only for authenticated and reachable Forge Hub sessions."""
+def account_label(profile, *, connected, signed_in, pending=False):
+    """Never show a signed-in user as Guest during a temporary auth outage.
+
+    Session presence and online validation are different states. The last
+    validated display name survives launcher restarts without a network fetch.
+    """
     profile = profile if isinstance(profile, dict) else {}
     if not signed_in:
         return {"name": "Guest", "status": "Not signed in", "online": False,
                 "avatar_url": None}
-    if not connected:
-        name = profile.get("username") or profile.get("display_name") or "Player"
-        return {"name": str(name)[:22], "status": "Offline", "online": False,
-                "avatar_url": github_avatar_url(profile.get("avatar_url"))}
-    name = profile.get("username") or profile.get("display_name") or "Player"
-    return {"name": str(name)[:22], "status": "Online", "online": True,
-            "avatar_url": github_avatar_url(profile.get("avatar_url"))}
+    name = profile.get("username") or profile.get("display_name") or "My Account"
+    return {
+        "name": str(name)[:22],
+        "status": "Online" if connected else ("Connecting..." if pending else "Offline"),
+        "online": bool(connected),
+        "avatar_url": github_avatar_url(profile.get("avatar_url")),
+    }
 
 
 def github_avatar_url(value):

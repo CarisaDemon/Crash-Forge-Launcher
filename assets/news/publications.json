@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.47",
+      "title": "Play, Repair, NEWS & Account Fix",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.47",
+      "notes": [
+        "Play explains missing original CTR disc files and immediate launch failures.",
+        "Repair uses the correct game-root mods folder without touching personal files.",
+        "Latest game and launcher releases are featured on the Home screen in actual time order.",
+        "Signed-in Forge Hub account name stays visible while the network reconnects."
+      ]
+    },
+    {
       "version": "0.3.46",
       "title": "Snapshot - Multi-Monitor Window Fixes",
       "date": "2026-10-11",
