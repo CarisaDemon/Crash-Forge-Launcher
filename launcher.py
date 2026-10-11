@@ -407,6 +407,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._build()
         self._post_init_live()
         self.bind("<Configure>", self._on_root_configure, add="+")
+        self.bind("<Configure>", self._account_badge_reposition_popup, add="+")
         self.bind("<Button-1>", self._account_badge_parent_click, add="+")
         self.after(40, self._refresh_launcher_background)
         self.after(120, self._apply_responsive_layout)
@@ -1506,6 +1507,42 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         top.tag_bind("forge_account_chip", "<Button-1>",
                      self._account_badge_menu)
 
+    def _account_badge_popup_xy(self, width, height):
+        """Compute the dropdown position in virtual multi-monitor coordinates."""
+        canvas = getattr(self, "_header_canvas", None)
+        canvas_width = max(
+            canvas.winfo_width() if canvas is not None else 1,
+            self.winfo_width(),
+        )
+        layout = account_badge.header_layout(canvas_width)
+        parent_x, parent_y = self.winfo_rootx(), self.winfo_rooty()
+        anchor_x = parent_x + (layout["left"] + layout["right"]) // 2
+        anchor_y = parent_y + (layout["top"] + layout["bottom"]) // 2
+        work_area = account_badge.monitor_work_area_at(
+            anchor_x, anchor_y,
+            fallback=(0, 0, self.winfo_screenwidth(), self.winfo_screenheight()),
+        )
+        return account_badge.account_popup_position(
+            parent_x, parent_y, layout, width, height, work_area)
+
+    def _account_badge_reposition_popup(self, event=None):
+        """Keep the open dropdown anchored when moving/resizing the launcher."""
+        if event is not None and event.widget is not self:
+            return
+        popup = getattr(self, "_account_popup", None)
+        if popup is None:
+            return
+        try:
+            if not popup.winfo_exists():
+                return
+            width = max(194, popup.winfo_width())
+            height = max(65, popup.winfo_height())
+            x, y = self._account_badge_popup_xy(width, height)
+            if (popup.winfo_rootx(), popup.winfo_rooty()) != (x, y):
+                popup.geometry(f"{width}x{height}{x:+d}{y:+d}")
+        except tk.TclError:
+            self._account_popup = None
+
     def _account_badge_menu(self, event):
         """Industrial-orange dropdown, never a modal or native white-edged Menu."""
         current = getattr(self, "_account_popup", None)
@@ -1531,10 +1568,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         canvas = getattr(self, "_header_canvas", None)
         canvas_width = max(canvas.winfo_width(), self.winfo_width())
         layout = account_badge.header_layout(canvas_width)
-        x = self.winfo_rootx() + layout["right"] - width
-        y = self.winfo_rooty() + layout["bottom"] + 5
-        x = max(0, min(x, self.winfo_screenwidth() - width - 3))
-        y = max(0, min(y, self.winfo_screenheight() - height - 3))
+        x, y = self._account_badge_popup_xy(width, height)
 
         popup = tk.Toplevel(self)
         self._account_popup = popup
@@ -1543,7 +1577,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         popup.configure(bg=COLORS["orange"])
         popup.resizable(False, False)
         popup.transient(self)
-        popup.geometry(f"{width}x{height}+{x}+{y}")
+        popup.geometry(f"{width}x{height}{x:+d}{y:+d}")
 
         # This border is entirely drawn with Tk widgets; no Windows-native
         # popup menu outline, so the white system border cannot come back.
@@ -1575,8 +1609,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         popup.update_idletasks()
         real_height = max(height, popup.winfo_reqheight())
         if real_height != height:
-            y = max(0, min(y, self.winfo_screenheight() - real_height - 3))
-            popup.geometry(f"{width}x{real_height}+{x}+{y}")
+            x, y = self._account_badge_popup_xy(width, real_height)
+            popup.geometry(f"{width}x{real_height}{x:+d}{y:+d}")
         popup.bind("<Escape>", self._close_account_badge_menu)
         popup.bind("<FocusOut>", self._account_badge_focus_out)
         popup.deiconify()

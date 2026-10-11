@@ -35,6 +35,69 @@ def account_menu_items(signed_in):
     return (("MY ACCOUNT", "OPEN FORGE HUB", "SIGN OUT") if signed_in
             else ("LOG IN", "OPEN FORGE HUB"))
 
+
+def monitor_work_area_at(x, y, fallback=(0, 0, 1920, 1080)):
+    """Nearest *actual monitor* work area, in desktop-wide screen coordinates.
+
+    Tk's winfo_screenwidth/height report the primary screen on Windows, so
+    clamping a floating menu to those values throws it onto the first monitor.
+    """
+    import os
+    if os.name != "nt":
+        return tuple(fallback)
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Point(ctypes.Structure):
+            _fields_ = (("x", ctypes.c_long), ("y", ctypes.c_long))
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = (("cbSize", wintypes.DWORD),
+                        ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT),
+                        ("dwFlags", wintypes.DWORD))
+
+        api = ctypes.windll.user32
+        from_point = api.MonitorFromPoint
+        from_point.argtypes = (Point, wintypes.DWORD)
+        from_point.restype = wintypes.HANDLE
+        handle = from_point(Point(int(x), int(y)), 2)  # MONITOR_DEFAULTTONEAREST
+        if not handle:
+            return tuple(fallback)
+
+        monitor_info = api.GetMonitorInfoW
+        monitor_info.argtypes = (wintypes.HANDLE, ctypes.POINTER(MonitorInfo))
+        monitor_info.restype = wintypes.BOOL
+        info = MonitorInfo()
+        info.cbSize = ctypes.sizeof(MonitorInfo)
+        if not monitor_info(handle, ctypes.byref(info)):
+            return tuple(fallback)
+        r = info.rcWork
+        return (int(r.left), int(r.top), int(r.right), int(r.bottom))
+    except (AttributeError, OSError, ValueError, TypeError):
+        return tuple(fallback)
+
+
+def account_popup_position(parent_x, parent_y, badge_layout,
+                           popup_width, popup_height, work_area, *, gap=5):
+    """Position dropdown under the profile badge on its own monitor.
+
+    Both input and output are *desktop-wide* coordinates, which may be
+    negative for displays located to the left/above the primary monitor.
+    """
+    left, top, right, bottom = map(int, work_area)
+    popup_width = int(popup_width)
+    popup_height = int(popup_height)
+    desired_x = int(parent_x) + int(badge_layout["right"]) - popup_width
+    desired_y = int(parent_y) + int(badge_layout["bottom"]) + gap
+    if desired_y + popup_height > bottom - 3:
+        desired_y = int(parent_y) + int(badge_layout["top"]) - popup_height - gap
+    # Clamp to the owning monitor only, never to the primary monitor.
+    x = max(left + 3, min(desired_x, right - popup_width - 3))
+    y = max(top + 3, min(desired_y, bottom - popup_height - 3))
+    return (x, y)
+
 def account_label(profile, *, connected, signed_in):
     """Green only for authenticated and reachable Forge Hub sessions."""
     profile = profile if isinstance(profile, dict) else {}
