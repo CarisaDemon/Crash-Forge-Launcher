@@ -380,6 +380,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._account_badge_queue = queue.Queue()
         self._account_badge_avatar_url = ""
         self._account_badge_avatar_photo = None
+        self._account_popup = None
 
         # Keep our custom frame, but register this window as a real Windows app
         # so it appears in the taskbar and Alt+Tab.
@@ -406,6 +407,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._build()
         self._post_init_live()
         self.bind("<Configure>", self._on_root_configure, add="+")
+        self.bind("<Button-1>", self._account_badge_parent_click, add="+")
         self.after(40, self._refresh_launcher_background)
         self.after(120, self._apply_responsive_layout)
         self.after(200, self._account_badge_refresh_async)
@@ -1214,6 +1216,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         top.bind("<Button-1>", self._drag_start)
         top.bind("<B1-Motion>", self._drag_move)
         top.bind("<Double-Button-1>", lambda e: self._toggle_maximize())
+        top.bind("<Button-1>", self._account_badge_parent_click, add="+")
         top.bind("<Configure>", self._paint_floating_header)
 
         # Initial paint after geometry has settled.
@@ -1360,36 +1363,6 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 lambda e: self._open_forge_hub_website(),
             )
 
-        if width >= 1050:
-            # Forge Hub account shortcut. It does not overlap the existing
-            # editor/hub controls, nor the title on narrow 4:3 windows.
-            account_x1 = hub_x2 + 12
-            account_x2 = account_x1 + 111
-            top.create_rectangle(
-                account_x1, editor_y1, account_x2, editor_y2,
-                fill="#0B0E12", outline="#5C6269", width=1,
-                tags=("header", "account_button", "account_frame"),
-            )
-            top.create_rectangle(
-                account_x1, editor_y1, account_x1 + 3, editor_y2,
-                fill=COLORS["orange"], outline="",
-                tags=("header", "account_button"),
-            )
-            top.create_text(
-                (account_x1 + account_x2) / 2 + 2,
-                (editor_y1 + editor_y2) / 2,
-                text=("ACCOUNT *" if self.account_client.signed_in else "ACCOUNT"),
-                fill="#E8E8E4", font=("Bahnschrift SemiBold", 9),
-                tags=("header", "account_button"),
-            )
-            top.tag_bind("account_button", "<Enter>",
-                         lambda e: top.itemconfigure("account_frame",
-                                                      outline=COLORS["orange"]))
-            top.tag_bind("account_button", "<Leave>",
-                         lambda e: top.itemconfigure("account_frame", outline="#5C6269"))
-            top.tag_bind("account_button", "<Button-1>",
-                         lambda e: self._open_account_dialog())
-
         # Version text floats independently; move below the buttons in
         # compact windows to avoid covering the web shortcut.
 
@@ -1534,24 +1507,140 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                      self._account_badge_menu)
 
     def _account_badge_menu(self, event):
-        """Clickable chip; no modal dialog or sticky keyboard/mouse grabs."""
-        menu = tk.Menu(self, tearoff=False, bg="#151A20", fg="#F3F1ED",
-                       activebackground="#9D3D07",
-                       activeforeground="#FFFFFF",
-                       relief="solid", bd=1)
-        menu.add_command(label="MY ACCOUNT" if self.account_client.signed_in
-                         else "SIGN IN / REGISTER",
-                         command=self._open_account_dialog)
-        menu.add_command(label="OPEN FORGE HUB",
-                         command=self._open_forge_hub_website)
-        if self.account_client.signed_in:
-            menu.add_separator()
-            menu.add_command(label="SIGN OUT",
-                             command=self._account_badge_sign_out)
+        """Industrial-orange dropdown, never a modal or native white-edged Menu."""
+        current = getattr(self, "_account_popup", None)
+        if current is not None:
+            try:
+                if current.winfo_exists():
+                    self._close_account_badge_menu()
+                    return
+            except tk.TclError:
+                pass
+        signed_in = bool(self.account_client.signed_in)
+        actions = {
+            "LOG IN": self._open_account_dialog,
+            "MY ACCOUNT": self._open_account_dialog,
+            "OPEN FORGE HUB": self._open_forge_hub_website,
+            "SIGN OUT": self._account_badge_sign_out,
+        }
+        items = account_badge.account_menu_items(signed_in)
+        width = 194
+        row_height = 34
+        separator_height = 9 if signed_in else 0
+        height = 4 + len(items) * row_height + separator_height
+        canvas = getattr(self, "_header_canvas", None)
+        canvas_width = max(canvas.winfo_width(), self.winfo_width())
+        layout = account_badge.header_layout(canvas_width)
+        x = self.winfo_rootx() + layout["right"] - width
+        y = self.winfo_rooty() + layout["bottom"] + 5
+        x = max(0, min(x, self.winfo_screenwidth() - width - 3))
+        y = max(0, min(y, self.winfo_screenheight() - height - 3))
+
+        popup = tk.Toplevel(self)
+        self._account_popup = popup
+        popup.withdraw()
+        popup.overrideredirect(True)
+        popup.configure(bg=COLORS["orange"])
+        popup.resizable(False, False)
+        popup.transient(self)
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+
+        # This border is entirely drawn with Tk widgets; no Windows-native
+        # popup menu outline, so the white system border cannot come back.
+        outer = tk.Frame(popup, bg=COLORS["orange"], bd=0)
+        outer.pack(fill="both", expand=True, padx=0, pady=0)
+        panel = tk.Frame(outer, bg="#11161C", bd=0)
+        panel.pack(fill="both", expand=True, padx=2, pady=2)
+
+        for label in items:
+            if label == "SIGN OUT":
+                separator = tk.Frame(panel, bg="#99440D", height=1)
+                separator.pack(fill="x", padx=11, pady=(4, 4))
+            item = tk.Label(
+                panel, text=label, bg="#11161C", fg="#F3F1ED",
+                font=("Bahnschrift SemiBold", 9), anchor="w",
+                padx=17, pady=0, bd=0, relief="flat", height=2,
+                cursor="hand2",
+            )
+            item.pack(fill="x", expand=True)
+            item.bind("<Enter>", lambda e, widget=item:
+                      widget.configure(bg="#8F3505", fg="#FFFFFF"))
+            item.bind("<Leave>", lambda e, widget=item:
+                      widget.configure(bg="#11161C", fg="#F3F1ED"))
+            item.bind("<Button-1>", lambda e, action=actions[label]:
+                      self._account_badge_invoke(action))
+
+        # Fit actual DPI-scaled label heights instead of clipping bottom
+        # actions on monitors using Windows text scaling.
+        popup.update_idletasks()
+        real_height = max(height, popup.winfo_reqheight())
+        if real_height != height:
+            y = max(0, min(y, self.winfo_screenheight() - real_height - 3))
+            popup.geometry(f"{width}x{real_height}+{x}+{y}")
+        popup.bind("<Escape>", self._close_account_badge_menu)
+        popup.bind("<FocusOut>", self._account_badge_focus_out)
+        popup.deiconify()
+        popup.lift()
+        # No grab_set and no hidden modal window: the launcher stays usable.
+        popup.after(30, self._account_badge_focus_popup)
+
+    def _account_badge_focus_popup(self):
+        popup = getattr(self, "_account_popup", None)
+        if popup is None:
+            return
         try:
-            menu.tk_popup(event.x_root, event.y_root + 7)
-        finally:
-            menu.grab_release()
+            if popup.winfo_exists():
+                popup.focus_set()
+        except tk.TclError:
+            pass
+
+    def _account_badge_focus_out(self, _event=None):
+        # Avoid immediate close when Windows briefly changes focus while
+        # creating a borderless popup. Dismiss only when focus really leaves.
+        popup = getattr(self, "_account_popup", None)
+        if popup is None:
+            return
+        try:
+            popup.after(120, self._account_badge_dismiss_if_unfocused)
+        except tk.TclError:
+            pass
+
+    def _account_badge_dismiss_if_unfocused(self):
+        popup = getattr(self, "_account_popup", None)
+        if popup is None:
+            return
+        try:
+            focus = self.focus_get()
+            if focus is None or focus is not popup and str(focus).startswith(str(popup)) is False:
+                self._close_account_badge_menu()
+        except tk.TclError:
+            self._close_account_badge_menu()
+
+    def _account_badge_invoke(self, action):
+        self._close_account_badge_menu()
+        action()
+
+    def _close_account_badge_menu(self, _event=None):
+        popup = getattr(self, "_account_popup", None)
+        self._account_popup = None
+        if popup is not None:
+            try:
+                if popup.winfo_exists():
+                    popup.destroy()
+            except tk.TclError:
+                pass
+
+    def _account_badge_parent_click(self, event):
+        """A click elsewhere in the launcher closes the non-modal dropdown."""
+        popup = getattr(self, "_account_popup", None)
+        if popup is None:
+            return
+        if event.widget is self._header_canvas:
+            layout = account_badge.header_layout(self._header_canvas.winfo_width())
+            if (layout["left"] <= event.x <= layout["right"] and
+                    layout["top"] <= event.y <= layout["bottom"]):
+                return
+        self._close_account_badge_menu()
 
     def _account_badge_clear(self):
         self._account_badge_profile = {}

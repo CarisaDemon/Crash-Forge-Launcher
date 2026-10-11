@@ -26,10 +26,14 @@ def header_layout(width):
         "left": right - card_width, "right": right,
         "top": 11, "bottom": 66,
         "show_hub_button": width >= 920,
-        "show_legacy_account": width >= 1050,
         "compact_version": compact,
     }
 
+
+def account_menu_items(signed_in):
+    """Guest has LOGIN only; account actions require an active session."""
+    return (("MY ACCOUNT", "OPEN FORGE HUB", "SIGN OUT") if signed_in
+            else ("LOG IN", "OPEN FORGE HUB"))
 
 def account_label(profile, *, connected, signed_in):
     """Green only for authenticated and reachable Forge Hub sessions."""

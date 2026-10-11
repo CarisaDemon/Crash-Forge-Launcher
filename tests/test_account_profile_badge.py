@@ -59,9 +59,8 @@ class AccountChipTests(unittest.TestCase):
                                f"Navigation overlap at width {width}")
             self.assertLess(coords["right"], width - 117,
                             f"Overlaps Windows minimize button at {width}")
-            if coords["show_legacy_account"]:
-                self.assertGreater(coords["left"], 650,
-                                   f"Overlaps left ACCOUNT at width {width}")
+            self.assertNotIn("show_legacy_account", coords,
+                             "Old duplicate ACCOUNT button should be removed")
 
     @unittest.skipUnless(os.name=="nt", "Windows Tk smoke")
     def test_real_launcher_guest_badge_has_drawn_person_and_dropdown(self):
