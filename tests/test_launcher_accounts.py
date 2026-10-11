@@ -55,6 +55,39 @@ class AccountClientTests(unittest.TestCase):
         self.assertEqual(seen[0][1]["identifier"],"test_name")
         self.assertFalse(any("getUserById" in u for u,_ in seen))
 
+    def test_linked_github_avatar_is_returned_in_profile(self):
+        client=self.make()
+        client._save_session(SESSION)
+        github_url="https://avatars.githubusercontent.com/u/12345?v=4"
+        github_user=dict(USER,identities=[
+            {"provider":"github","identity_data":{"avatar_url":github_url}}
+        ])
+        def request(url,payload=None,*,token=None,method="POST"):
+            if "/auth/v1/user" in url:
+                return github_user
+            if "/rest/v1/forge_accounts?" in url:
+                return [{"username":"online_racer","display_name":"Online Racer"}]
+            raise AssertionError(url)
+        client._request=request
+        profile=client.profile()
+        self.assertEqual(profile["avatar_url"],github_url)
+        self.assertTrue(profile["github_linked"])
+        self.assertEqual(profile["username"],"online_racer")
+
+    def test_email_only_account_has_no_forged_github_avatar(self):
+        client=self.make()
+        client._save_session(SESSION)
+        other=dict(USER,user_metadata={
+            "avatar_url":"https://avatars.githubusercontent.com/u/456?v=4"
+        })
+        client._request=lambda url,*args,**kwargs: (
+            other if "/auth/v1/user" in url else
+            [{"username":"email_racer","display_name":"Email Racer"}]
+        )
+        profile=client.profile()
+        self.assertFalse(profile["github_linked"])
+        self.assertEqual(profile["avatar_url"],"")
+
     def test_signup_respects_email_verification_and_private_data(self):
         c=self.make()
         calls=[]

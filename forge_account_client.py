@@ -277,6 +277,18 @@ class AccountClient:
                     pass  # Username taken or email not yet verified.
         identities = user.get("identities") or []
         providers = {str(x.get("provider")) for x in identities if isinstance(x, dict)}
+        github_identity = next((
+            x.get("identity_data") or {} for x in identities
+            if isinstance(x, dict) and x.get("provider") == "github"
+        ), {})
+        if not isinstance(github_identity, dict):
+            github_identity = {}
+        raw_metadata = user.get("user_metadata") or {}
+        if not isinstance(raw_metadata, dict):
+            raw_metadata = {}
+        github_avatar = (
+            github_identity.get("avatar_url") or raw_metadata.get("avatar_url") or ""
+        ) if "github" in providers else ""
         self._user = user
         return {
             "id": uid,
@@ -284,6 +296,7 @@ class AccountClient:
             "username": str(account.get("username") or ""),
             "display_name": str(account.get("display_name") or ""),
             "github_linked": "github" in providers,
+            "avatar_url": str(github_avatar)[:512],
             "providers": sorted(providers),
         }
 

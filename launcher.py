@@ -4,6 +4,7 @@ import webbrowser
 import json
 import textwrap
 import threading
+import queue
 import ctypes
 import subprocess
 from datetime import datetime
@@ -16,6 +17,7 @@ import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
 import forge_mod_manager as mod_manager
+import forge_account_badge as account_badge
 from forge_dialogs import ask_mod_install, preview_newer_version
 from forge_account_client import AccountClient
 from forge_account_ui import open_account_dialog
@@ -372,6 +374,12 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._button_layout_scale = 1.0
         self.account_client = AccountClient()
         self._account_dialog = None
+        self._account_badge_profile = {}
+        self._account_badge_connected = False
+        self._account_badge_generation = 0
+        self._account_badge_queue = queue.Queue()
+        self._account_badge_avatar_url = ""
+        self._account_badge_avatar_photo = None
 
         # Keep our custom frame, but register this window as a real Windows app
         # so it appears in the taskbar and Alt+Tab.
@@ -400,6 +408,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self.bind("<Configure>", self._on_root_configure, add="+")
         self.after(40, self._refresh_launcher_background)
         self.after(120, self._apply_responsive_layout)
+        self.after(200, self._account_badge_refresh_async)
+        self.after(220, self._account_badge_poll)
+        self.after(120000, self._account_badge_periodic)
 
         # Tk marks borderless windows as tool windows on Windows. Fix the
         # extended style after the native HWND exists.
@@ -1312,76 +1323,78 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         # External community web shortcut, visibly next to EDITOR.
         # The existing MODS button continues to open the launcher-native hub.
-        hub_x1 = editor_x2 + 12
-        hub_x2 = hub_x1 + 114
-        top.create_rectangle(
-            hub_x1, editor_y1, hub_x2, editor_y2,
-            fill="#0B0E12", outline="#5C6269", width=1,
-            tags=("header", "forge_hub_button", "forge_hub_frame"),
-        )
-        top.create_rectangle(
-            hub_x1, editor_y1, hub_x1 + 3, editor_y2,
-            fill=COLORS["orange"], outline="",
-            tags=("header", "forge_hub_button"),
-        )
-        top.create_text(
-            (hub_x1 + hub_x2) / 2 + 2,
-            (editor_y1 + editor_y2) / 2,
-            text="FORGE HUB", fill="#E8E8E4",
-            font=("Bahnschrift SemiBold", 9),
-            tags=("header", "forge_hub_button"),
-        )
-        top.tag_bind(
-            "forge_hub_button", "<Enter>",
-            lambda e: top.itemconfigure(
-                "forge_hub_frame", outline=COLORS["orange"]
+        if width >= 920:
+            hub_x1 = editor_x2 + 12
+            hub_x2 = hub_x1 + 114
+            top.create_rectangle(
+                hub_x1, editor_y1, hub_x2, editor_y2,
+                fill="#0B0E12", outline="#5C6269", width=1,
+                tags=("header", "forge_hub_button", "forge_hub_frame"),
             )
-        )
-        top.tag_bind(
-            "forge_hub_button", "<Leave>",
-            lambda e: top.itemconfigure(
-                "forge_hub_frame", outline="#5C6269"
+            top.create_rectangle(
+                hub_x1, editor_y1, hub_x1 + 3, editor_y2,
+                fill=COLORS["orange"], outline="",
+                tags=("header", "forge_hub_button"),
             )
-        )
-        top.tag_bind(
-            "forge_hub_button", "<Button-1>",
-            lambda e: self._open_forge_hub_website(),
-        )
+            top.create_text(
+                (hub_x1 + hub_x2) / 2 + 2,
+                (editor_y1 + editor_y2) / 2,
+                text="FORGE HUB", fill="#E8E8E4",
+                font=("Bahnschrift SemiBold", 9),
+                tags=("header", "forge_hub_button"),
+            )
+            top.tag_bind(
+                "forge_hub_button", "<Enter>",
+                lambda e: top.itemconfigure(
+                    "forge_hub_frame", outline=COLORS["orange"]
+                )
+            )
+            top.tag_bind(
+                "forge_hub_button", "<Leave>",
+                lambda e: top.itemconfigure(
+                    "forge_hub_frame", outline="#5C6269"
+                )
+            )
+            top.tag_bind(
+                "forge_hub_button", "<Button-1>",
+                lambda e: self._open_forge_hub_website(),
+            )
 
-        # Forge Hub account shortcut. It does not overlap the existing
-        # editor/hub controls, nor the title on narrow 4:3 windows.
-        account_x1 = hub_x2 + 12
-        account_x2 = account_x1 + 111
-        top.create_rectangle(
-            account_x1, editor_y1, account_x2, editor_y2,
-            fill="#0B0E12", outline="#5C6269", width=1,
-            tags=("header", "account_button", "account_frame"),
-        )
-        top.create_rectangle(
-            account_x1, editor_y1, account_x1 + 3, editor_y2,
-            fill=COLORS["orange"], outline="",
-            tags=("header", "account_button"),
-        )
-        top.create_text(
-            (account_x1 + account_x2) / 2 + 2,
-            (editor_y1 + editor_y2) / 2,
-            text=("ACCOUNT *" if self.account_client.signed_in else "ACCOUNT"),
-            fill="#E8E8E4", font=("Bahnschrift SemiBold", 9),
-            tags=("header", "account_button"),
-        )
-        top.tag_bind("account_button", "<Enter>",
-                     lambda e: top.itemconfigure("account_frame",
-                                                  outline=COLORS["orange"]))
-        top.tag_bind("account_button", "<Leave>",
-                     lambda e: top.itemconfigure("account_frame", outline="#5C6269"))
-        top.tag_bind("account_button", "<Button-1>",
-                     lambda e: self._open_account_dialog())
+        if width >= 1050:
+            # Forge Hub account shortcut. It does not overlap the existing
+            # editor/hub controls, nor the title on narrow 4:3 windows.
+            account_x1 = hub_x2 + 12
+            account_x2 = account_x1 + 111
+            top.create_rectangle(
+                account_x1, editor_y1, account_x2, editor_y2,
+                fill="#0B0E12", outline="#5C6269", width=1,
+                tags=("header", "account_button", "account_frame"),
+            )
+            top.create_rectangle(
+                account_x1, editor_y1, account_x1 + 3, editor_y2,
+                fill=COLORS["orange"], outline="",
+                tags=("header", "account_button"),
+            )
+            top.create_text(
+                (account_x1 + account_x2) / 2 + 2,
+                (editor_y1 + editor_y2) / 2,
+                text=("ACCOUNT *" if self.account_client.signed_in else "ACCOUNT"),
+                fill="#E8E8E4", font=("Bahnschrift SemiBold", 9),
+                tags=("header", "account_button"),
+            )
+            top.tag_bind("account_button", "<Enter>",
+                         lambda e: top.itemconfigure("account_frame",
+                                                      outline=COLORS["orange"]))
+            top.tag_bind("account_button", "<Leave>",
+                         lambda e: top.itemconfigure("account_frame", outline="#5C6269"))
+            top.tag_bind("account_button", "<Button-1>",
+                         lambda e: self._open_account_dialog())
 
         # Version text floats independently; move below the buttons in
         # compact windows to avoid covering the web shortcut.
 
         controls_right = width - 18
-        if width >= 920:
+        if width >= 1200:
             version_x, version_y, version_font = controls_right - 170, 41, 9
         else:
             version_x, version_y, version_font = controls_right - 8, 70, 8
@@ -1461,6 +1474,173 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             "win_close", "<Button-1>",
             lambda e: self.destroy()
         )
+        self._draw_account_badge(top, width)
+
+    def _draw_account_badge(self, top, width):
+        """Native Tk account chip. Guest always has a drawn person silhouette."""
+        layout = account_badge.header_layout(width)
+        x1, x2 = layout["left"], layout["right"]
+        y1, y2 = layout["top"], layout["bottom"]
+        active = self.account_client.signed_in
+        state = account_badge.account_label(
+            self._account_badge_profile,
+            connected=self._account_badge_connected,
+            signed_in=active,
+        )
+        tag = ("header", "forge_account_chip")
+        top.create_rectangle(x1, y1, x2, y2, fill="#10151B",
+                             outline="#B95D15", width=1, tags=tag)
+        top.create_line(x1 + 2, y2 - 1, x2 - 2, y2 - 1,
+                        fill="#442A1C", tags=tag)
+        cx, cy = x1 + 28, 38
+        photo = self._account_badge_avatar_photo
+        if photo is not None and state["avatar_url"] == self._account_badge_avatar_url:
+            top.create_image(cx, cy, image=photo, tags=tag)
+        else:
+            # Built-in Guest portrait. Never a blank circle; no image files.
+            top.create_oval(cx - 22, cy - 22, cx + 22, cy + 22,
+                            fill="#1C252B", outline="#C66B25",
+                            width=2, tags=tag)
+            top.create_oval(cx - 7, cy - 14, cx + 7, cy,
+                            fill="#E9B079", outline="", tags=tag)
+            top.create_oval(cx - 15, cy + 3, cx + 15, cy + 20,
+                            fill="#E9B079", outline="", tags=tag)
+        name = state["name"]
+        if len(name) > 15:
+            name = name[:14] + "..."
+        top.create_text(x1 + 61, 31, text=name, anchor="w",
+                        font=("Bahnschrift SemiBold", 11),
+                        fill="#F1EFEB", tags=tag)
+        status_color = "#46D577" if state["online"] else "#747E87"
+        top.create_oval(x1 + 62, 47, x1 + 71, 56, outline="",
+                        fill=status_color, tags=tag)
+        top.create_text(x1 + 77, 52, text=state["status"], anchor="w",
+                        font=("Bahnschrift", 9),
+                        fill=status_color if state["online"] else "#B5B8BC",
+                        tags=tag)
+        # Dropdown caret
+        top.create_line(x2 - 18, 34, x2 - 13, 39, x2 - 8, 34,
+                        fill="#E6C1A0", width=2, tags=tag)
+        top.tag_bind("forge_account_chip", "<Enter>",
+                     lambda e: top.itemconfigure("forge_account_chip_border",
+                                                 outline=COLORS["orange"]))
+        # Only the rectangle gets the hover border, not the avatar's oval.
+        top.addtag_withtag("forge_account_chip_border",
+                           top.find_withtag("forge_account_chip")[0])
+        top.tag_bind("forge_account_chip", "<Leave>",
+                     lambda e: top.itemconfigure("forge_account_chip_border",
+                                                 outline="#B95D15"))
+        top.tag_bind("forge_account_chip", "<Button-1>",
+                     self._account_badge_menu)
+
+    def _account_badge_menu(self, event):
+        """Clickable chip; no modal dialog or sticky keyboard/mouse grabs."""
+        menu = tk.Menu(self, tearoff=False, bg="#151A20", fg="#F3F1ED",
+                       activebackground="#9D3D07",
+                       activeforeground="#FFFFFF",
+                       relief="solid", bd=1)
+        menu.add_command(label="MY ACCOUNT" if self.account_client.signed_in
+                         else "SIGN IN / REGISTER",
+                         command=self._open_account_dialog)
+        menu.add_command(label="OPEN FORGE HUB",
+                         command=self._open_forge_hub_website)
+        if self.account_client.signed_in:
+            menu.add_separator()
+            menu.add_command(label="SIGN OUT",
+                             command=self._account_badge_sign_out)
+        try:
+            menu.tk_popup(event.x_root, event.y_root + 7)
+        finally:
+            menu.grab_release()
+
+    def _account_badge_clear(self):
+        self._account_badge_profile = {}
+        self._account_badge_connected = False
+        self._account_badge_avatar_url = ""
+        self._account_badge_avatar_photo = None
+        self._paint_floating_header()
+
+    def _account_badge_sign_out(self):
+        self._account_badge_generation += 1  # Invalidate pending network jobs.
+        self._account_badge_clear()
+        generation = self._account_badge_generation
+        def worker():
+            try:
+                self.account_client.sign_out()
+            finally:
+                self._account_badge_queue.put(("signed_out", None, generation))
+        threading.Thread(target=worker, daemon=True,
+                         name="ForgeBadgeSignOut").start()
+
+    def _account_badge_changed(self):
+        """Invoked after successful login or logout in the Account dialog."""
+        self._account_badge_refresh_async()
+
+    def _account_badge_refresh_async(self):
+        """Nonblocking identity validation; green only after server confirmation."""
+        self._account_badge_generation += 1
+        generation = self._account_badge_generation
+        if not self.account_client.signed_in:
+            self._account_badge_clear()
+            return
+        def worker():
+            try:
+                profile = self.account_client.profile()
+                result = (profile, True)
+            except Exception:
+                result = (None, False)
+            self._account_badge_queue.put(("profile", result, generation))
+        threading.Thread(target=worker, daemon=True,
+                         name="ForgeBadgeProfileCheck").start()
+
+    def _account_badge_periodic(self):
+        self._account_badge_refresh_async()
+        self.after(120000, self._account_badge_periodic)
+
+    def _account_badge_poll(self):
+        """Tk widgets and PhotoImage are created on the Tk/main thread only."""
+        while True:
+            try:
+                kind, payload, generation = self._account_badge_queue.get_nowait()
+            except queue.Empty:
+                break
+            if generation != self._account_badge_generation:
+                continue
+            if kind == "profile":
+                profile, connected = payload
+                if profile is not None:
+                    self._account_badge_profile = profile
+                self._account_badge_connected = bool(connected)
+                url = account_badge.github_avatar_url(
+                    self._account_badge_profile.get("avatar_url"))
+                if not url:
+                    self._account_badge_avatar_url = ""
+                    self._account_badge_avatar_photo = None
+                elif url != self._account_badge_avatar_url:
+                    self._account_badge_avatar_url = url
+                    self._account_badge_avatar_photo = None
+                    def fetch(avatar_url=url, epoch=generation):
+                        try:
+                            data = account_badge.fetch_github_avatar(avatar_url)
+                        except Exception:
+                            data = None
+                        self._account_badge_queue.put(
+                            ("avatar", (avatar_url, data), epoch))
+                    threading.Thread(target=fetch, daemon=True,
+                                     name="ForgeBadgeAvatar").start()
+                self._paint_floating_header()
+            elif kind == "avatar":
+                url, data = payload
+                if url == self._account_badge_avatar_url and data and ImageTk:
+                    try:
+                        self._account_badge_avatar_photo = ImageTk.PhotoImage(
+                            account_badge.avatar_photo(data, size=44))
+                    except Exception:
+                        self._account_badge_avatar_photo = None
+                    self._paint_floating_header()
+            elif kind == "signed_out":
+                self._account_badge_clear()
+        self.after(200, self._account_badge_poll)
 
     def _open_account_dialog(self):
         existing = getattr(self, "_account_dialog", None)
@@ -1474,7 +1654,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         try:
             self._account_dialog = open_account_dialog(
                 self, self.account_client,
-                on_change=lambda: self._paint_floating_header(),
+                on_change=self._account_badge_changed,
             )
         except Exception as exc:
             # A failed optional account dialog must never lock PLAY, MODS,
