@@ -117,3 +117,23 @@ jobs:
             gh release edit $tag --notes-file $notes --repo $env:GITHUB_REPOSITORY
             if ($LASTEXITCODE -ne 0) { throw "Could not attach current release description image $tag" }
           }
+
+  release-notes-only:
+    name: Update v0.3.44 changelog (no new release or ZIP)
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, '[changelog-only]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout corrected changelog
+        uses: actions/checkout@v4
+      - name: Update only existing release text
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(cat launcher_version.txt)" = "0.3.44"
+          ! grep -qi 'level_99' RELEASE_NOTES.md
+          ! grep -qi 'level_99' LAUNCHER_CHANGELOG.txt
+          ! grep -qi 'level_99' assets/news/publications.json
+          gh release edit v0.3.44 --notes-file RELEASE_NOTES.md --repo "$GITHUB_REPOSITORY"

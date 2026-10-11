@@ -11,7 +11,7 @@
 - Existing installations, mods, configuration and saved games are not changed by updating the launcher.
 
 ## Music track detection
-- OGG Toolkit includes **level_99 — HANGOUT_HUB** even before a custom OGG file has been installed. It continues detecting other level_XX files dynamically.
+- OGG Toolkit automatically discovers available music destinations and custom tracks, even when an OGG file has not been installed yet.
 - Both OGG and CSEQ now discover enabled native track modules from the game's mods folders when the configured installation is available, including legacy assets/mods/tracks.
 - CSEQ's list can show tracks such as **My Custom Track** using its native track.ini; OGG shows these modules even when no custom OGG is assigned yet.
 - Custom native tracks remain experimental: discovery in the editors does **not** mean that the game-side track loader and collision behavior have been finalized.
@@ -25,7 +25,7 @@
 
 ## Package validation
 - Expanded clean portable ZIP checks to verify all three editors launch without system Python.
-- Added a real headless OGG WinForms GUI test covering the logo, taskbar, Hangout level_99 and native track detection.
+- Added an OGG WinForms interface test covering the logo, taskbar and native track discovery.
 - Keeps the launcher updater, separate editor EXEs and file-integrity validation intact.
 
 **Windows only.** This is a launcher/editor update, not the v2.1.0 game release. The original CTR disc image is not included or required to open the launcher/editor tools.

@@ -9,7 +9,7 @@
       "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.44",
       "notes": [
         "OGG, CSEQ and Model Importer now share the game installation configured in Launcher Settings.",
-        "OGG detects Hangout level_99 plus native custom Track mods.",
+        "OGG automatically detects music destinations and custom native Track mods.",
         "CSEQ lists custom tracks and adds a visible Game Folder selector on every tab.",
         "CF:R logo and taskbar icons restored across music editors.",
         "OGG opens without a PowerShell console; all tools are standalone Windows EXEs.",
