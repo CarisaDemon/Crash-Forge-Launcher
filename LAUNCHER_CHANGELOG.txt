@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.46
+- Snapshot: fix window positions on monitors with negative desktop coordinates.
+- Fix launcher move/resize/maximize and account/Editor/Settings floating-window placement.
+- Keep bundled EXE editors, manual game folder and independent NEWS intact.
+
 v0.3.45 — BIG UPDATE
 - Editor now opens all three packaged EXEs; no old batch shortcuts or visible command windows.
 - Editor selector and tools open on the same monitor as the launcher.

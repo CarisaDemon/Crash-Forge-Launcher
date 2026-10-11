@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
@@ -57,7 +57,7 @@ $forgeLogo = (Join-Path $Source "assets\icons\cfr_icon.png") + ";forge_assets/ic
 $forgeIcon = (Join-Path $Source "assets\icons\cfr_icon.ico") + ";forge_assets/icons"
 $cseqIcon = (Join-Path $Source "companion_tools\cseq_toolkit\assets\cfr_icon.ico") + ";assets"
 Write-Output "Building bundled CSEQ/MIDI music toolkit..."
-& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --name "CrashForgeCSEQToolkit" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $forgeBackground --add-data $forgeLogo --add-data $cseqIcon --distpath (Join-Path $BuildRoot "cseq_toolkit") --workpath (Join-Path $workRoot "cseq_toolkit") --specpath $specRoot (Join-Path $Source "companion_tools\cseq_toolkit\gui.py")
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --collect-all numpy --name "CrashForgeCSEQToolkit" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $forgeBackground --add-data $forgeLogo --add-data $cseqIcon --distpath (Join-Path $BuildRoot "cseq_toolkit") --workpath (Join-Path $workRoot "cseq_toolkit") --specpath $specRoot (Join-Path $Source "companion_tools\cseq_toolkit\gui.py")
 if($LASTEXITCODE -ne 0){throw "CSEQ Music Toolkit build failed"}
 Copy-Item -LiteralPath (Join-Path $BuildRoot "cseq_toolkit\CrashForgeCSEQToolkit.exe") -Destination (Join-Path $toolsTarget "CrashForgeCSEQToolkit.exe") -Force
 

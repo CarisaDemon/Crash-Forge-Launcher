@@ -31,7 +31,7 @@ class FeaturedReleaseTests(unittest.TestCase):
 
     def test_release_highlights_have_english_summary_and_version(self):
         version, highlights = forge_services.real_launcher_changelog(str(ROOT), limit=3)
-        self.assertTrue(version.startswith("v0.3.45"))
+        self.assertTrue(version.startswith("v0.3.46"))
         self.assertEqual(len(highlights), 3)
         self.assertTrue(all(15 <= len(row) < 100 for row in highlights))
 

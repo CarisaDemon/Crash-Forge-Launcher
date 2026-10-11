@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.46",
+      "title": "Snapshot - Multi-Monitor Window Fixes",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.46",
+      "notes": [
+        "Corrected launcher window positions on screens left of or above the main monitor.",
+        "Fixed account dropdown, Editor selector and Settings popup positions.",
+        "Improved maximize, drag and resize handling across monitors.",
+        "All editor EXEs, manually chosen game folder and independent NEWS remain unchanged."
+      ]
+    },
+    {
       "version": "0.3.45",
       "title": "BIG UPDATE — Editors, Monitors & Independent NEWS",
       "date": "2026-10-11",
