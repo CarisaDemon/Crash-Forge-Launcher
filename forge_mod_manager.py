@@ -1,6 +1,6 @@
 """Crash Forge modular mod library and native INI switches.
 
-One game-readable folder per new mod: assets/mods/<permanent_web_id>/.
+One game-readable folder per new mod: mods/<readable_mod_name>/ next to ctr-native.exe.
 The *native* [character]/[kart]/[wheel(s)]/[music]/[track] enabled value
 is the authority, not an independent launcher setting. [forge_mod] supplies
 an ID/version so Forge Hub can match an exact published package.
@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import unicodedata
 
 CATEGORIES = {
     "Character": ("racers", "character.ini", ("character",)),
@@ -47,15 +48,92 @@ def category_for_directory(directory: str) -> str | None:
 
 
 def game_mods(game_path) -> Path:
+    """New name-based modules live next to ctr-native.exe, not within assets/."""
+    return Path(game_path) / "mods"
+
+
+def legacy_game_mods(game_path) -> Path:
+    """Old, category-grouped mods remain in assets/mods and are never moved."""
     return Path(game_path) / "assets" / "mods"
 
 
-def mod_path(game_path, category: str, slug: str) -> Path:
+def folder_name_for_title(title: str) -> str:
+    """Portable, readable name for a module directory (never a web identifier).
+
+    Folder names are intentionally filesystem-safe ASCII slugs to work on
+    Windows, native game scanners and Wine; full display names stay in INI.
+    """
+    human = unicodedata.normalize("NFKD", str(title or "")).encode(
+        "ascii", "ignore").decode("ascii").lower()
+    name = re.sub(r"[^a-z0-9]+", "_", human).strip("_")
+    if not name:
+        name = "community_mod"
+    name = name[:58].rstrip("_") or "community_mod"
+    # The native assets router reserves these legacy category names, and
+    # Windows forbids the old DOS device names as directory components.
+    reserved = {"racers", "karts", "wheels", "music", "tracks",
+                "vanilla_racer_masks", "con", "prn", "aux", "nul"}
+    reserved.update("com" + str(i) for i in range(1, 10))
+    reserved.update("lpt" + str(i) for i in range(1, 10))
+    return "mod_" + name if name in reserved else name
+
+
+def _find_existing_web_folder(game_path, stable_id: str):
+    """Find an installed mod by its immutable [forge_mod] ID, NOT dirname."""
+    root = game_mods(game_path)
+    if not root.is_dir() or root.is_symlink():
+        return None, None
+    found = []
+    for folder in root.iterdir():
+        if not SLUG.fullmatch(folder.name) or not _safe_directory(folder, root):
+            continue
+        for kind, (_, filename, _) in CATEGORIES.items():
+            ini = folder / filename
+            if not ini.is_file() or ini.is_symlink():
+                continue
+            try:
+                cfg = _read_ini(ini)
+                if (cfg.has_section(MANAGER_SECTION) and
+                    cfg.get(MANAGER_SECTION, "id", fallback="").strip() == stable_id):
+                    declared_type = cfg.get(MANAGER_SECTION, "type", fallback="")
+                    # Match by immutable ID; the requested category and the
+                    # declared type are checked by read_mod/installer later.
+                    found.append((folder, kind))
+            except ModManagerError:
+                continue
+    if len(found) > 1:
+        raise ModManagerError("Duplicate installed web mod ID: "+stable_id)
+    return found[0] if found else (None, None)
+
+
+def mod_path(game_path, category: str, slug: str, title: str | None = None,
+             *, prefer_readable: bool = False) -> Path:
+    """Resolve existing stable ID; otherwise choose a collision-safe name."""
     if category not in CATEGORIES:
         raise ModManagerError("Unknown Forge mod type: " + str(category))
-    # New packages live directly in assets/mods/<permanent_web_id>/.
-    # Legacy category folders remain readable, never automatically moved.
-    return game_mods(game_path) / validate_slug(slug)
+    stable_id = validate_slug(slug)
+    found, kind = _find_existing_web_folder(game_path, stable_id)
+    if found is not None:
+        if kind != category:
+            raise ModManagerError("Web mod ID belongs to a different category")
+        # Old versions used the web ID as dirname. On explicit REINSTALL,
+        # choose a readable path and let the transactional installer back up
+        # the old folder; all ordinary lookups still resolve the existing ID.
+        if not (prefer_readable and title and found.name == stable_id and
+                folder_name_for_title(title) != stable_id):
+            return found
+    root = game_mods(game_path)
+    # Until updated, existing ID-named folders still resolve by their INI.
+    # Never rename/delete previous installed mods automatically.
+    readable = folder_name_for_title(title or slug)
+    for index in range(1, 999):
+        name = readable if index == 1 else (readable[:54] + "_" + str(index))
+        location = root / name
+        if not location.exists() and not location.is_symlink():
+            return location
+        # A same-named folder with missing/invalid metadata is not ours.
+        # Never overwrite it or assume ownership based on its title.
+    raise ModManagerError("Unable to allocate a unique mod folder name")
 
 
 def _safe_directory(path: Path, root: Path) -> bool:
@@ -99,9 +177,8 @@ def _identifier(config, kind: str, slug: str, *, reassignment=False):
             raise ModManagerError("INI mod type does not match ["+native+
                                   "] and requested category "+kind)
         declared=config.get(MANAGER_SECTION,"id",fallback="").strip()
-        if declared and declared != slug and not reassignment:
-            raise ModManagerError("INI ID ("+declared+
-                                  ") does not match web mod folder ("+slug+")")
+        if declared and not SLUG.fullmatch(declared):
+            raise ModManagerError("Invalid immutable web mod ID in native INI")
     # Native [character]/[kart] id is an asset identifier from the original
     # mod creator; the web package ID is assigned independently by Forge Hub.
     return native
@@ -179,8 +256,9 @@ def _edit_ini(path: Path, kind: str, slug: str, *,
             _put_ini_key(lines, MANAGER_SECTION, "enabled",
                          "true" if enabled else "false")
     if meta is not None:
-        if meta.get("id") != slug or meta.get("type") != kind:
+        if meta.get("type") != kind or not SLUG.fullmatch(str(meta.get("id", ""))):
             raise ModManagerError("Mismatched package identity")
+        # Folder name is human-readable; immutable web identity lives here.
         # Preserve existing user-edited metadata whenever the package is local.
         if not cfg.has_section(MANAGER_SECTION):
             newline = "\r\n" if "\r\n" in raw else "\n"
@@ -212,15 +290,23 @@ def _edit_ini(path: Path, kind: str, slug: str, *,
 def read_mod(game_path, kind: str, slug: str, *, legacy=False):
     """Read new web-ID package or legacy category path without moving files."""
     root=game_mods(game_path)
+    legacy_root=legacy_game_mods(game_path)
     validate_slug(slug)
     if kind not in CATEGORIES:
         raise ModManagerError("Unsupported installed mod category: "+str(kind))
     filename=CATEGORIES[kind][1]
-    unified=mod_path(game_path,kind,slug)
-    old=root/CATEGORIES[kind][0]/slug
+    # Callers may supply web ID OR actual readable folder name.
+    found, found_kind = _find_existing_web_folder(game_path,slug) if not legacy else (None,None)
+    if found is not None and found_kind != kind:
+        raise ModManagerError("Web ID belongs to another mod category")
+    direct = root / slug
+    unified = found or (direct if _safe_directory(direct,root) else
+                        mod_path(game_path,kind,slug))
+    old=legacy_root/CATEGORIES[kind][0]/slug
     folder=(old if legacy else unified)
-    if not _safe_directory(folder,root):
-        if not legacy and _safe_directory(old,root):
+    folder_root=legacy_root if legacy else root
+    if not _safe_directory(folder,folder_root):
+        if not legacy and _safe_directory(old,legacy_root):
             folder=old
             legacy=True
         else:
@@ -242,9 +328,13 @@ def read_mod(game_path, kind: str, slug: str, *, legacy=False):
         section=_identifier(cfg,kind,slug)
         if not legacy and not cfg.has_section(MANAGER_SECTION):
             raise ModManagerError("Missing [forge_mod] id/type metadata")
-        if not legacy and (cfg.get(MANAGER_SECTION,"id",fallback="")!=slug or
-                           cfg.get(MANAGER_SECTION,"type",fallback="")!=kind):
+        if not legacy and (
+                not SLUG.fullmatch(cfg.get(MANAGER_SECTION,"id",fallback="")) or
+                cfg.get(MANAGER_SECTION,"type",fallback="")!=kind):
             raise ModManagerError("Web ID or type not declared in native INI")
+        if not legacy and found is not None and cfg.get(
+                MANAGER_SECTION,"id",fallback="") != slug:
+            raise ModManagerError("Resolved installed web ID does not match INI")
         raw=cfg.get(section,"enabled",fallback="true").strip().lower()
         if raw not in ("true","false","yes","no","on","off","1","0"):
             raise ModManagerError("Invalid native enabled value")
@@ -253,6 +343,9 @@ def read_mod(game_path, kind: str, slug: str, *, legacy=False):
         title=(cfg.get(section_name,"name",fallback="").strip() or
                cfg.get(section,"name",fallback="").strip() or row["title"])
         row.update({
+            "id":(cfg.get(MANAGER_SECTION,"id",fallback=slug)
+                  if not legacy else slug),
+            "folder":folder.name,
             "title":title[:100],
             "version":cfg.get(MANAGER_SECTION,"version",fallback="") if
                 cfg.has_section(MANAGER_SECTION) else "",
@@ -267,24 +360,24 @@ def read_mod(game_path, kind: str, slug: str, *, legacy=False):
     except (OSError,ModManagerError,ValueError) as exc:
         row["status"]="INVALID INI"
         row["description"]=str(exc)[:180]
-    if kind=="Track":
-        row["status"]="STAGED TRACK" if row["manageable"] else row["status"]
-        row["description"]=("Native LEV/VRM track registration in the game is pending. "+
-                            row["description"])
+    # Native LEV/VRM loading and custom track listing are now implemented;
+    # do not report working installed custom tracks as 'staged'. 
     return row
 
 
 def scan_installed(game_path):
     """List unified web-ID mods + untouched legacy category folders."""
     root=game_mods(game_path)
-    if not root.is_dir() or root.is_symlink():
-        return []
+    old_root=legacy_game_mods(game_path)
     results={}
-    try:
-        names=list(root.iterdir())
-    except OSError:
-        return []
-    # New flat modules: assets/mods/<web-id>/{character.ini,...}
+    if root.is_dir() and not root.is_symlink():
+        try:
+            names=list(root.iterdir())
+        except OSError:
+            names=[]
+    else:
+        names=[]
+    # New flat modules: <game>/mods/<web-id>/{character.ini,...}
     for folder in names:
         if not SLUG.fullmatch(folder.name) or not _safe_directory(folder,root):
             continue
@@ -292,17 +385,17 @@ def scan_installed(game_path):
             if (folder/filename).is_file():
                 try:
                     result=read_mod(game_path,kind,folder.name,legacy=False)
-                    results[(kind,folder.name)]=result
+                    results[(kind,result["id"])]=result
                 except (OSError,ModManagerError):
                     continue
     # Existing mods/racers|karts|wheels|music/* are visible in INSTALLED,
     # but they are never copied, renamed, or made falsely compatible.
     for kind,(subfolder,filename,_) in CATEGORIES.items():
-        parent=root/subfolder
-        if not _safe_directory(parent,root):
+        parent=old_root/subfolder
+        if not _safe_directory(parent,old_root):
             continue
         for folder in parent.iterdir():
-            if not SLUG.fullmatch(folder.name) or not _safe_directory(folder,root):
+            if not SLUG.fullmatch(folder.name) or not _safe_directory(folder,old_root):
                 continue
             key=(kind,folder.name)
             if key in results:
@@ -324,7 +417,7 @@ def set_enabled(game_path, kind: str, slug: str, enabled: bool):
     if kind=="Modpack":
         _set_modpack_enabled(game_path,directory,slug,enabled)
     else:
-        _edit_ini(directory/CATEGORIES[kind][1],kind,slug,enabled=enabled)
+        _edit_ini(directory/CATEGORIES[kind][1],kind,item["id"],enabled=enabled)
     return read_mod(game_path,kind,slug)
 
 

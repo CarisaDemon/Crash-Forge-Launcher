@@ -5,6 +5,7 @@ import json
 import textwrap
 import threading
 import ctypes
+import subprocess
 from datetime import datetime
 import tkinter as tk
 from tkinter import font as tkfont, filedialog, messagebox
@@ -15,6 +16,7 @@ import forge_releases as releases
 import forge_launcher_updates as launcher_updates
 import forge_news_history as news_history
 import forge_mod_manager as mod_manager
+from forge_dialogs import ask_mod_install, preview_newer_version
 
 try:
     from PIL import Image, ImageTk, ImageOps
@@ -1463,7 +1465,24 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._close_editor_selector()
 
         try:
-            os.startfile(path)
+            if os.name == "nt" and str(path).lower().endswith(".exe"):
+                env = os.environ.copy()
+                game = os.path.abspath(str(getattr(self, "game_install_path", "") or ""))
+                if os.path.isdir(game) and any(
+                    os.path.isfile(os.path.join(game, exe))
+                    for exe in ("ctr-native.exe", "ctr_native.exe")
+                ):
+                    # The two music editors scan the installed mod tree.
+                    # Never hardcode custom tracks or game installation paths.
+                    env["CFR_GAME_PATH"] = game
+                subprocess.Popen(
+                    [path], cwd=os.path.dirname(os.path.abspath(path)),
+                    env=env, creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                os.startfile(path)
             self.status_label.configure(
                 text=f"Editor tool opened: {os.path.basename(path)}"
             )
@@ -4723,5 +4742,38 @@ if __name__ == "__main__":
             required.append(os.path.join(BASE_DIR, launcher_updates.UPDATER_EXE))
         invalid = any(not os.path.isfile(item) for item in required)
         raise SystemExit(1 if invalid else 0)
+    # Screenshot preview mode never polls remote feeds, stages downloads, or
+    # self-updates.  It is a separate test instance; never mutate the user's
+    # existing installed launcher.
+    preview_mode = sys.argv[1:] in (
+        ["--preview-new-version"],
+        ["--preview-mod-install"],
+        ["--preview-dialogs"],
+    )
+    if preview_mode:
+        os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"
     app = Launcher()
+    if preview_mode:
+        app.launcher_auto_update = False
+    if sys.argv[1:] == ["--preview-new-version"]:
+        app.after(700, lambda: preview_newer_version(
+            app, icon_path=os.path.join(
+                BASE_DIR, "assets", "icons", "cfr_icon.png")))
+    elif sys.argv[1:] in (["--preview-mod-install"], ["--preview-dialogs"]):
+        def _preview_install():
+            follow_up = None
+            if sys.argv[1:] == ["--preview-dialogs"]:
+                follow_up = lambda: preview_newer_version(
+                    app, icon_path=os.path.join(
+                        BASE_DIR, "assets", "icons", "cfr_icon.png"))
+            ask_mod_install(
+                app, {
+                    "title": "Team Bandicoot Kart (CNK)",
+                    "author": "Carisa_Demon",
+                    "id": "forge-2634caf465b548e182d728c4339d378c",
+                }, local=False, preview=True,
+                icon_path=os.path.join(
+                    BASE_DIR, "assets", "icons", "cfr_icon.png"),
+                on_close=follow_up)
+        app.after(700, _preview_install)
     app.mainloop()

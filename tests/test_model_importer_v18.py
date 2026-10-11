@@ -38,8 +38,10 @@ class ModelImporterV18Tests(unittest.TestCase):
                            encoding="utf-8")
             offsets={k:"0" for k in "xyz"}
             a=import_mod(obj,base,"kart","Demo Kart","demo_kart","1.0",offsets)
-            self.assertTrue((base/"assets"/"mods"/"karts"/"demo_kart"/"kart.ini").is_file())
-            self.assertTrue((base/"assets"/"mods"/"karts"/"demo_kart"/"demo_kart.obj").is_file())
+            self.assertTrue((base/"mods"/"demo_kart"/"kart.ini").is_file())
+            self.assertIn("type = Kart", (base/"mods"/"demo_kart"/"kart.ini").read_text())
+            self.assertFalse((base/"assets"/"mods"/"karts"/"demo_kart").exists())
+            self.assertTrue((base/"mods"/"demo_kart"/"demo_kart.obj").is_file())
             self.assertEqual(a["backup"],None)
             # The same mod cannot be overwritten without explicit consent.
             with self.assertRaises(ImportErrorMod):
@@ -49,7 +51,7 @@ class ModelImporterV18Tests(unittest.TestCase):
             self.assertIsNotNone(b["backup"])
             self.assertTrue(Path(b["backup"]).is_dir())
             self.assertTrue(str(b["backup"]).startswith(
-                str(base/"assets"/"mods"/"_model_import_backups")))
+                str(base/".forge_mod_backups"/"model_import")))
 
     def test_wheel_import_requires_four_groups(self):
         with tempfile.TemporaryDirectory() as folder:

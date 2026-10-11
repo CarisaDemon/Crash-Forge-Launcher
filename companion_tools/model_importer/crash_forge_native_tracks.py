@@ -3,7 +3,7 @@
 Only CTR's paired LEV (level/collision/checkpoints) and VRM (textures) are
 accepted. An OBJ or MTL can never be installed as a track using this tool.
 
-Packages are staged under assets/mods/tracks/<slug>; they do not replace retail
+Packages are installed under mods/<slug> next to ctr-native.exe; they do not replace retail
 levels or activate an unfinished renderer. The game must explicitly support
 loading such packages before they are playable.
 """
@@ -96,7 +96,7 @@ def game_mods_directory(game_path) -> Path:
         game = exe.parent
     if not (game / "ctr-native.exe").is_file() and not (game / "ctr_native.exe").is_file():
         raise NativeTrackError("Select the installed CFR game directory (ctr-native.exe).")
-    return game / "assets" / "mods" / "tracks"
+    return game / "mods"
 
 
 def install_native_track(lev_path, vrm_path, game_path, *,
@@ -115,6 +115,8 @@ def install_native_track(lev_path, vrm_path, game_path, *,
     destination = mod_root / slug
     if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
         raise NativeTrackError("Unsafe existing track destination.")
+    if destination.is_dir() and not (destination / "track.ini").is_file():
+        raise NativeTrackError("Mod ID is already assigned to another mod category.")
     metadata = (
         "[track]\n"
         f"name = {name}\n"
@@ -123,7 +125,7 @@ def install_native_track(lev_path, vrm_path, game_path, *,
         "lev = data.lev\n"
         "vrm = data.vrm\n"
         "enabled = true\n"
-        "install_status = staged\n"
+        "install_status = active\n"
         "replace_original = false\n"
         f"description = {description}\n"
         f"author = {author}\n"
@@ -134,9 +136,15 @@ def install_native_track(lev_path, vrm_path, game_path, *,
         "\n[checksums]\n"
         f"lev_sha256 = {pair['lev_sha256']}\n"
         f"vrm_sha256 = {pair['vrm_sha256']}\n"
+        "\n[forge_mod]\n"
+        f"id = {slug}\n"
+        "type = Track\n"
+        "source = local\n"
+        "version = 1.0\n"
+        "enabled = true\n"
     )
     result = dict(pair, slug=slug, name=name, target=str(destination),
-                  activation="staged; game native track registration required")
+                  activation="native LEV/VRM custom track")
     if dry_run:
         return result
     mod_root.mkdir(parents=True, exist_ok=True)
@@ -154,7 +162,7 @@ def install_native_track(lev_path, vrm_path, game_path, *,
             raise NativeTrackError("Copied track data did not match its source (SHA-256).")
         (stage / "track.ini").write_text(metadata, encoding="utf-8")
         if destination.exists():
-            backup_dir = mod_root.parent.parent / "track_package_backups"
+            backup_dir = mod_root.parent / "track_package_backups"
             backup_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             previous = backup_dir / (slug + "_" + stamp + "_" + uuid.uuid4().hex[:6])

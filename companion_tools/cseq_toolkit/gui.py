@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import sys
 import threading
@@ -42,6 +43,9 @@ from gm_names import gm_program_name
 from instrument_map import RetailInstrument, RetailDrum, load_retail_catalog
 from midi_reader import MidiFile, read_midi, summarize
 from package_builder import build_music_package
+from track_discovery import (
+    discover_custom_tracks, valid_game_root, install_cseq_on_custom_track,
+)
 from sf2_import import (
     Sf2Error,
     export_zone_temp,
@@ -76,7 +80,7 @@ WARNING = "#FFB000"
 ERROR = "#FF6B78"
 BORDER = "#2A2F36"
 LINE_HOT = "#6A2A08"
-APP_VERSION = "1.0.13"
+APP_VERSION = "1.0.14"
 
 # Use assets shipped inside our own EXE, never another installation's files.
 _BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
@@ -197,6 +201,8 @@ class App(tk.Tk):
         self.channel_transpose_vars: dict[int, tk.IntVar] = {}
         self.drum_vars: dict[int, tk.StringVar] = {}
         self.target_var = tk.StringVar(value="No level override")
+        self.game_root_var = tk.StringVar(value=os.environ.get("CFR_GAME_PATH", ""))
+        self.custom_track_targets = {}
         self.race_intro_var = tk.BooleanVar(value=False)
         self.race_intro_status_var = tk.StringVar(
             value="Move LOOP START to choose where the repeating section begins"
@@ -1102,13 +1108,25 @@ class App(tk.Tk):
             f"level_{level_id:02d} | {name}"
             for level_id, name in LEVEL_TARGETS.items()
         ]
-        ttk.Combobox(
+        self.target_combo = ttk.Combobox(
             target_row,
             textvariable=self.target_var,
             values=target_values,
             state="readonly",
             width=42,
-        ).pack(side="left", padx=(8, 0))
+        )
+        self.target_combo.pack(side="left", padx=(8, 0))
+        self.target_combo.bind("<Button-1>", lambda event: self._refresh_custom_tracks())
+        game_row = ttk.Frame(outer, style="Panel.TFrame", padding=(8, 0, 8, 8))
+        game_row.pack(fill="x")
+        ttk.Label(game_row, text="GAME", style="Section.TLabel").pack(side="left")
+        ttk.Label(game_row, textvariable=self.game_root_var,
+                  width=66, style="Muted.TLabel").pack(side="left", padx=(9, 0))
+        ttk.Button(game_row, text="BROWSE GAME",
+                   command=self._browse_custom_tracks_game).pack(side="left", padx=(8, 0))
+        ttk.Button(game_row, text="REFRESH TRACKS",
+                   command=self._refresh_custom_tracks).pack(side="left", padx=(6, 0))
+        self._refresh_custom_tracks()
         ttk.Label(
             target_row,
             text="Written to music.ini; external CSEQ loading is active in Crash Forge Racing.",
@@ -2331,11 +2349,65 @@ class App(tk.Tk):
         Path(filename).write_bytes(cseq)
         messagebox.showinfo("CSEQ built", f"Wrote {len(cseq)} bytes.\n\n{filename}")
 
+    def _browse_custom_tracks_game(self) -> None:
+        initial = self.game_root_var.get()
+        chosen = filedialog.askdirectory(
+            title="Select Crash Forge: Racing game folder",
+            initialdir=initial if Path(initial).is_dir() else None
+        )
+        if chosen:
+            root = valid_game_root(chosen)
+            if root is None:
+                messagebox.showerror("Game not found",
+                                     "Select the folder containing ctr-native.exe or ctr_native.exe.")
+                return
+            self.game_root_var.set(str(root))
+            self._refresh_custom_tracks()
+
+    def _refresh_custom_tracks(self) -> None:
+        if not hasattr(self, "target_combo"):
+            return
+        tracks = discover_custom_tracks(self.game_root_var.get())
+        self.custom_track_targets = {track.target_label: track for track in tracks}
+        values = ["No level override"] + [
+            f"level_{level_id:02d} | {name}"
+            for level_id, name in LEVEL_TARGETS.items()
+        ] + list(self.custom_track_targets)
+        self.target_combo.configure(values=values)
+        if self.target_var.get() not in values:
+            self.target_var.set("No level override")
+
     def save_package(self) -> None:
         try:
             cseq = self._build_cseq()
         except (ValueError, CseqEncodeError) as exc:
             messagebox.showerror("Cannot build package", str(exc))
+            return
+
+        chosen_custom = self.custom_track_targets.get(self.target_var.get())
+        if chosen_custom:
+            available = discover_custom_tracks(self.game_root_var.get())
+            found = next((item for item in available
+                          if item.directory == chosen_custom.directory), None)
+            if found is None:
+                messagebox.showerror("Custom track unavailable",
+                                     "This track is no longer installed or enabled. Refresh the list.")
+                return
+            if (found.directory / "track.cseq").is_file() and not messagebox.askyesno(
+                "Replace track music", f"Replace the existing music in {found.name}?"
+            ):
+                return
+            try:
+                path = install_cseq_on_custom_track(
+                    found, cseq, self._last_custom_samples
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Cannot install track music", str(exc))
+                return
+            messagebox.showinfo(
+                "Custom track music installed",
+                f"{found.name}\n\n{path}\n\nNo retail track music was changed.",
+            )
             return
 
         parent = filedialog.askdirectory(

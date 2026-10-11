@@ -7,8 +7,8 @@ Archive format:
     wheels/<id>/wheels.ini         [wheel] name
     tracks/<id>/track.ini          [track] name
 
-Each included mod is installed independently at assets/mods/<web-id>/.
-The pack inventory is also stored under assets/mods/<pack-id>/, never mixed
+Each included mod is installed independently at <game>/mods/<web-id>/.
+The pack inventory is also stored under <game>/mods/<pack-id>/, never mixed
 with the assets in other mods. Legacy category folders are not migrated.
 Backups and rollback protect existing user mods if any component fails.
 """
@@ -108,16 +108,32 @@ def install_prepared_modpack(contents: str | Path, game_path: str | Path, pack_i
     root = Path(contents)
     package = inspect_modpack(root)
     home = Path(game_path)
-    mods_root = home / "assets" / "mods"
-    inventory = mods_root / pack_id
+    mods_root = home / "mods"
+    import forge_mod_manager as manager
     if any(slug == pack_id for _, slug, _, _ in package["components"]):
         raise ModpackError("Modpack ID cannot reuse a component web ID.")
-    destinations = []
-    for category, slug, source, title in package["components"]:
-        # Every module is a sibling of other modules, never merged into a
-        # shared racers/karts/wheels directory.
-        target = mods_root / slug
-        destinations.append((source, target))
+    try:
+        inventory = manager.mod_path(
+            home, "Modpack", pack_id, title=package["name"])
+        destinations = []
+        pending = {os.path.normcase(str(inventory))}
+        for category, slug, source, title in package["components"]:
+            # Each child has its own stable ID inside the native INI,
+            # but the on-disk folder uses its recognizable mod name.
+            kind = manager.category_for_directory(category)
+            target = manager.mod_path(home, kind, slug, title=title)
+            candidate = target
+            counter = 2
+            while os.path.normcase(str(candidate)) in pending:
+                readable = manager.folder_name_for_title(title)
+                candidate = mods_root / (readable[:52] + "_" + str(counter))
+                if candidate.exists() or candidate.is_symlink():
+                    raise ModpackError("Modpack name collision with existing folder")
+                counter += 1
+            pending.add(os.path.normcase(str(candidate)))
+            destinations.append((source, candidate))
+    except manager.ModManagerError as error:
+        raise ModpackError(str(error)) from error
     # The modpack is only an inventory, not an extra container of models.
     record_src = root / ".modpack-inventory"
     record_src.mkdir()

@@ -45,12 +45,15 @@ class NativeTrackTests(unittest.TestCase):
         self.assertEqual((target / "data.vrm").read_bytes(), self.vrm.read_bytes())
         ini = (target / "track.ini").read_text()
         self.assertIn("format = native_lev_vrm", ini)
+        self.assertEqual(target.parent.resolve(), (self.game/"mods").resolve())
+        self.assertIn("[forge_mod]", ini)
+        self.assertIn("type = Track", ini)
         self.assertIn("replace_original = false", ini)
         self.assertIn("level_override = none", ini)
         self.assertFalse((self.game / "assets" / "mods" / "tracks" / "assembly_lane").exists())
 
     def test_dry_run_doesnt_touch_directory(self):
-        p = self.game / "assets" / "mods"
+        p = self.game / "mods"
         self.build(dry_run=True)
         self.assertFalse(p.exists())
 
@@ -59,7 +62,7 @@ class NativeTrackTests(unittest.TestCase):
         other.write_bytes(self.lev.read_bytes())
         with self.assertRaisesRegex(NativeTrackError, "Only"):
             self.build(lev_path=other)
-        self.assertFalse((self.game / "assets" / "mods").exists())
+        self.assertFalse((self.game / "mods").exists())
 
     def test_reject_path_traversal_in_slug(self):
         with self.assertRaises(NativeTrackError):

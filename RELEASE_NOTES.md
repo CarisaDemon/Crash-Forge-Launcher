@@ -1,3 +1,4 @@
-# Crash Forge Racing Launcher v0.3.41
+# Crash Forge Racing Launcher v0.3.42
 
-- File verification system.
+- Mod folder separation.
+- Dynamic custom track detection in music editors.

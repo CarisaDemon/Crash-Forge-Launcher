@@ -17,6 +17,7 @@ import forge_launcher_integrity as launcher_integrity
 import forge_news_history as news_history
 import forge_iso_integrity as iso_integrity
 from forge_version_dialog import ask_play_outdated
+from forge_dialogs import ask_mod_install, ask_game_update
 
 
 def available_game_update(game_path, release):
@@ -66,13 +67,22 @@ class ForgeLiveMixin:
         self.online_cfg = services.read_online_config(self._forge_base_dir())
         self.installed_mods_record = self._load_installed_mods_record()
         self._refresh_real_install_ui()
-        # Offline CTR-U audit; no dialogs or restriction on local gameplay.
-        try:
-            iso_integrity.start_background_check(self.game_install_path, "launcher_start")
-        except Exception:
-            pass  # ISO diagnostics must never break launcher startup.
+        screenshot_preview = os.environ.get("CFR_SCREENSHOT_PREVIEW") == "1"
+        # A screenshot preview never checks the game ISO, polls releases,
+        # downloads packages or stages an automatic launcher update.
+        if not screenshot_preview:
+            try:
+                iso_integrity.start_background_check(
+                    self.game_install_path, "launcher_start")
+            except Exception:
+                pass  # ISO diagnostics must never break launcher startup.
         self._render_real_news()
         self._refresh_hub_source_status()
+        if screenshot_preview:
+            self.launcher_auto_update = False
+            self.online_status = "SCREENSHOT PREVIEW | OFFLINE"
+            self._refresh_hub_source_status()
+            return
         if self.online_cfg.get("feed_url"):
             self._reload_live_source()
         if getattr(self, "_auto_recovered_game_path", False):
@@ -840,20 +850,10 @@ class ForgeLiveMixin:
                 text="Local version is already the same or newer than GitHub v" +
                 release["version"] + ". No downgrade will be performed.")
             return
-        asset = release.get("asset") or {}
-        confirmed = messagebox.askyesno(
-            "Crash Forge: Racing - Verified GitHub Update",
-            "Install the OFFICIAL Windows game release?\n\n"
-            "Release: v" + release["version"] + "\n"
-            "ZIP: " + str(asset.get("name", "")) + "\n"
-            "Size: " + f"{asset.get('size', 0) / 1048576:.1f} MB" + "\n"
-            "Installed version: " + (local or "unknown") + "\n"
-            "Folder: " + self.game_install_path + "\n\n"
-            "The ZIP is checked against its SHA-256 before any files are replaced.\n"
-            "Original game files are backed up. User mods and saves are protected.\n"
-            "Close the game first. Start this update?",
-            parent=self
-        )
+        confirmed = ask_game_update(
+            self, release, local, self.game_install_path,
+            icon_path=os.path.join(
+                self._forge_base_dir(), "assets", "icons", "cfr_icon.png"))
         if not confirmed:
             return
         self.game_update_busy = True
@@ -901,14 +901,11 @@ class ForgeLiveMixin:
         if not services.real_game_status(self.game_install_path)["installed"]:
             self.hub_status_label.configure(text="Select an installed ctr-native.exe game folder first.")
             return
-        consent = messagebox.askyesno(
-            "Forge Hub - Install Mod",
-            f"Install {mod['title']} by {mod['author']}?\n\n" +
-            ("Source: your selected local ZIP.\n" if local_zip else
-             "Source: published Forge Hub catalog.\n") +
-            "ZIP will be SHA-256 verified and installed to assets/mods/<mod-id>.\n"
-            "Existing copies of this mod are backed up; other mods are untouched.",
-            parent=self)
+        consent = ask_mod_install(
+            self, mod, local=local_zip,
+            game_path=self.game_install_path,
+            icon_path=os.path.join(
+                self._forge_base_dir(), "assets", "icons", "cfr_icon.png"))
         if not consent:
             return
         self.mod_download_busy = True

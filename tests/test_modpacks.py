@@ -55,12 +55,12 @@ class TestModpacks(unittest.TestCase):
 
     def test_distinct_ini_kept_in_flat_web_id_folders(self):
         result = packs.install_prepared_modpack(self.staging, self.game, "sample_pack")
-        self.assertEqual(Path(result).name, "sample_pack")
-        mods = self.game / "assets" / "mods"
+        self.assertEqual(Path(result).name, "test_bundle")
+        mods = self.game / "mods"
         self.assertTrue((mods / "test_racer" / "character.ini").is_file())
         self.assertTrue((mods / "test_kart" / "kart.ini").is_file())
-        self.assertTrue((mods / "sample_pack" / "contents.json").is_file())
-        self.assertFalse((mods / "sample_pack" / "racers").exists())
+        self.assertTrue((mods / "test_bundle" / "contents.json").is_file())
+        self.assertFalse((mods / "test_bundle" / "racers").exists())
 
     def test_manager_can_toggle_all_components_from_pack_inventory(self):
         import forge_mod_manager as manager
@@ -72,7 +72,7 @@ class TestModpacks(unittest.TestCase):
             services.download_install_mod(mod, str(self.game))
         manager.set_enabled(self.game, "Modpack", "sample_pack", False)
         for slug, ini in [("test_racer", "character.ini"), ("test_kart", "kart.ini")]:
-            text = (self.game/"assets"/"mods"/slug/ini).read_text()
+            text = (self.game/"mods"/slug/ini).read_text()
             self.assertIn("enabled = false", text)
         manager.set_enabled(self.game, "Modpack", "sample_pack", True)
         self.assertTrue(manager.read_mod(self.game, "Modpack", "sample_pack")["enabled"])
@@ -86,14 +86,14 @@ class TestModpacks(unittest.TestCase):
         with self.assertRaisesRegex(packs.ModpackError, "cannot reuse"):
             packs.install_prepared_modpack(self.staging, self.game, "test_kart")
 
-    def test_existing_different_kind_cannot_be_overwritten(self):
-        conflict=self.game/"assets"/"mods"/"test_racer"
+    def test_existing_different_kind_remains_untouched_and_new_mod_gets_suffix(self):
+        conflict=self.game/"mods"/"test_racer"
         conflict.mkdir(parents=True)
         (conflict/"kart.ini").write_text("[kart]\nname=Do not clobber\n")
-        with self.assertRaisesRegex(packs.ModpackError, "different module"):
-            packs.install_prepared_modpack(self.staging, self.game, "sample_pack")
+        packs.install_prepared_modpack(self.staging, self.game, "sample_pack")
         self.assertEqual((conflict/"kart.ini").read_text(),
                          "[kart]\nname=Do not clobber\n")
+        self.assertTrue((self.game/"mods"/"test_racer_2"/"character.ini").is_file())
 
     def test_reject_missing_individual_ini(self):
         (self.staging / "karts" / "test_kart" / "kart.ini").unlink()
@@ -113,16 +113,19 @@ class TestModpacks(unittest.TestCase):
             packs.inspect_modpack(self.staging)
 
     def test_reinstall_preserves_previous_components_as_backups(self):
-        existing = self.game / "assets" / "mods" / "test_racer"
+        existing = self.game / "mods" / "test_racer"
         existing.mkdir(parents=True)
-        (existing / "character.ini").write_text("ORIGINAL USER MOD", encoding="utf-8")
+        (existing / "character.ini").write_text(
+            "[character]\nname = Test Racer\nenabled = true\n"
+            "[forge_mod]\nid = test_racer\ntype = Character\n"
+            "note = ORIGINAL USER MOD\n", encoding="utf-8")
         packs.install_prepared_modpack(self.staging, self.game, "sample_pack")
         backups = list((self.game / ".forge_mod_backups").rglob("character.ini"))
         self.assertEqual(len(backups), 1)
-        self.assertEqual(backups[0].read_text(), "ORIGINAL USER MOD")
+        self.assertIn("ORIGINAL USER MOD", backups[0].read_text())
 
     def test_rollback_restores_existing_mod_if_later_component_fails(self):
-        existing = self.game / "assets" / "mods" / "test_kart"
+        existing = self.game / "mods" / "test_kart"
         existing.mkdir(parents=True)
         (existing / "kart.ini").write_text("USER ORIGINAL", encoding="utf-8")
         original = packs.os.replace
@@ -140,7 +143,7 @@ class TestModpacks(unittest.TestCase):
                 packs.install_prepared_modpack(self.staging, self.game, "sample_pack")
         self.assertTrue(triggered[0])
         self.assertEqual((existing / "kart.ini").read_text(), "USER ORIGINAL")
-        self.assertFalse((self.game / "assets" / "mods" / "sample_pack").exists())
+        self.assertFalse((self.game / "mods" / "test_bundle").exists())
 
     def test_download_verify_sha_and_install_bundle(self):
         data = zip_bytes(FILES)
@@ -150,8 +153,8 @@ class TestModpacks(unittest.TestCase):
         with patch.object(services.urllib.request, "urlopen", return_value=Stream(data, url)):
             target = services.download_install_mod(mod, str(self.game))
         self.assertTrue(Path(target).is_dir())
-        self.assertTrue((self.game / "assets/mods/test_kart/kart.ini").exists())
-        self.assertTrue((self.game / "assets/mods/test_racer/character.ini").exists())
+        self.assertTrue((self.game / "mods/test_kart/kart.ini").exists())
+        self.assertTrue((self.game / "mods/test_racer/character.ini").exists())
 
     def test_reject_bad_sha_without_writing_mods(self):
         data = zip_bytes(FILES)
@@ -161,7 +164,7 @@ class TestModpacks(unittest.TestCase):
         with patch.object(services.urllib.request, "urlopen", return_value=Stream(data, url)):
             with self.assertRaisesRegex(services.FeedError, "SHA-256 mismatch"):
                 services.download_install_mod(mod, str(self.game))
-        self.assertFalse((self.game / "assets/mods/sample_pack").exists())
+        self.assertFalse((self.game / "mods/test_bundle").exists())
 
     def test_reject_zip_traversal(self):
         data = zip_bytes({**FILES, "../evil.ini": "[evil]"})

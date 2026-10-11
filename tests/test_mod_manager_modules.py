@@ -55,7 +55,7 @@ class ModManagerInstalledTests(unittest.TestCase):
 
     def test_each_web_mod_has_its_own_named_folder_with_ini_id_and_type(self):
         path=self.install()
-        self.assertEqual(path, self.game/"assets"/"mods"/WEB_ID)
+        self.assertEqual(path, self.game/"mods"/"cool_kart")
         self.assertTrue((path/"my_kart.obj").is_file())
         content=(path/"kart.ini").read_text()
         self.assertIn("[forge_mod]",content)
@@ -86,7 +86,7 @@ class ModManagerInstalledTests(unittest.TestCase):
             "sha256":hashlib.sha256(self.archive.read_bytes()).hexdigest()
         })
         new=self.install()
-        self.assertEqual(new,self.game/"assets/mods"/WEB_ID)
+        self.assertEqual(new,self.game/"mods"/"cool_kart")
         item=manager.read_mod(self.game,"Kart",WEB_ID)
         self.assertEqual(item["title"],"Cool Kart 2")
         self.assertEqual(item["version"],"2.3")
@@ -133,7 +133,7 @@ class ModManagerInstalledTests(unittest.TestCase):
                   sha256=hashlib.sha256(self.archive.read_bytes()).hexdigest())
         path=Path(services.install_local_mod(data,str(self.game)))
         entry=manager.read_mod(self.game,"Track",WEB_ID)
-        self.assertEqual(entry["status"],"STAGED TRACK")
+        self.assertEqual(entry["status"],"ENABLED")
         self.assertTrue((path/"data.lev").exists())
         self.assertTrue((path/"data.vrm").exists())
 

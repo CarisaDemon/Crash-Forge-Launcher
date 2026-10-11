@@ -31,9 +31,14 @@ def import_mod(obj, game_root, kind, name, slug, scale, offsets, mounts=None,
         raise ImportErrorMod("Scale, offsets and wheel mounts must be numbers") from exc
     if not 0 < numbers["scale"] < 1000000:
         raise ImportErrorMod("Scale must be greater than zero")
-    dest_root = root / "assets" / "mods" / ("karts" if kind == "kart" else "wheels")
+    dest_root = root / "mods"
     dest_root.mkdir(parents=True, exist_ok=True)
     dest = dest_root / slug
+    if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
+        raise ImportErrorMod("Unsafe existing mod destination: " + str(dest))
+    expected_ini = "kart.ini" if kind == "kart" else "wheels.ini"
+    if dest.is_dir() and not (dest / expected_ini).is_file():
+        raise ImportErrorMod("Mod ID is already assigned to another category: " + str(dest))
     if dest.exists() and not replace:
         raise ImportErrorMod("Mod already exists: " + str(dest))
     lines = obj.read_text(encoding="utf-8-sig", errors="replace").splitlines()
@@ -111,6 +116,9 @@ def import_mod(obj, game_root, kind, name, slug, scale, offsets, mounts=None,
                 for axis in "xyz":
                     key = "wheel_" + wheel + "_" + axis
                     ini.append(key + " = " + str(attachments.get(key, 0.0)))
+        ini.extend(["", "[forge_mod]", "id = " + slug,
+                    "type = " + ("Kart" if kind == "kart" else "Wheels"),
+                    "source = local", "version = 1.0", "enabled = true"])
         (temp / ("kart.ini" if kind == "kart" else "wheels.ini")).write_text(
             "\n".join(ini) + "\n", encoding="utf-8")
         if colors:
@@ -124,8 +132,8 @@ def import_mod(obj, game_root, kind, name, slug, scale, offsets, mounts=None,
             except KartColorError as exc:
                 raise ImportErrorMod("Kart colors: " + str(exc)) from exc
         if dest.exists():
-            backup_root = root / "assets" / "mods" / "_model_import_backups"
-            backup_root.mkdir(exist_ok=True)
+            backup_root = root / ".forge_mod_backups" / "model_import"
+            backup_root.mkdir(parents=True, exist_ok=True)
             backup = backup_root / (kind + "_" + slug + "_" +
                                     datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
             shutil.copytree(dest, backup)

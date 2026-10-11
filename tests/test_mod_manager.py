@@ -136,7 +136,7 @@ class TestForgeModManager(unittest.TestCase):
         self.assertFalse(
             (root/"character.ini").read_text().split("enabled=")[-1].strip()=="true")
 
-    def test_installer_uses_web_id_directory_and_does_not_flatten_assets(self):
+    def test_installer_uses_readable_mod_name_with_stable_web_id_in_ini(self):
         data=io.BytesIO()
         with zipfile.ZipFile(data,"w",zipfile.ZIP_DEFLATED) as out:
             out.writestr("Cool Kart/kart.ini",
@@ -152,7 +152,7 @@ class TestForgeModManager(unittest.TestCase):
         with patch.object(services,"real_game_status",return_value={"installed":True}):
             result=services.install_local_mod(item,self.game)
         root=Path(result)
-        self.assertEqual(root.name,WEB_ID)
+        self.assertEqual(root.name,"blue_speedster")
         self.assertEqual(root.parent.name,"mods")
         self.assertTrue((root/"body.obj").is_file())
         ini=(root/"kart.ini").read_text()

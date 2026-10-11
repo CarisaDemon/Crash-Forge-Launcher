@@ -118,7 +118,8 @@ function MusicDirs {
 
 function Test-CtrRoot([string]$path) {
     if (!(Test-Path $path -PathType Container)) { return $false }
-    return (Test-Path (Join-Path $path "ctr_native.exe") -PathType Leaf)
+    return (Test-Path -LiteralPath (Join-Path $path "ctr_native.exe") -PathType Leaf) -or
+           (Test-Path -LiteralPath (Join-Path $path "ctr-native.exe") -PathType Leaf)
 }
 
 function Ensure-MusicDirs {
@@ -134,7 +135,7 @@ function Set-Root([string]$path) {
 
     try {
         $path = [Environment]::ExpandEnvironmentVariables($path.Trim().Trim('"'))
-        if ($path -match '(?i)\\ctr_native\.exe$') {
+        if ($path -match '(?i)\\ctr[-_]native\.exe$') {
             $path = Split-Path $path -Parent
         }
         $resolved = (Resolve-Path -LiteralPath $path).Path
@@ -186,6 +187,56 @@ function Get-DisplayName([int]$id) {
         return $script:KnownNames[$id]
     }
     return "Level $id"
+}
+
+function Get-CustomTrackFolders {
+    # Scan new <game>/mods/<web-id> and legacy assets/mods/tracks/<id>.
+    if (!$script:RootPath) { return @() }
+    $mods = Join-Path $script:RootPath "mods"
+    $roots = @($mods, (Join-Path $script:RootPath "assets\mods\tracks"))
+    $found = @{}
+    foreach ($base in $roots) {
+        if (!(Test-Path -LiteralPath $base -PathType Container)) { continue }
+        foreach ($folder in (Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue)) {
+            if (($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+            if ($folder.Name -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$') { continue }
+            $ini = Join-Path $folder.FullName "track.ini"
+            if (!(Test-Path -LiteralPath $ini -PathType Leaf)) { continue }
+            if ((Get-Item -LiteralPath $ini).Length -gt 32768) { continue }
+            $track = @{}
+            $meta = @{}
+            $section = ""
+            foreach ($raw in (Get-Content -LiteralPath $ini -ErrorAction SilentlyContinue)) {
+                $line = ([string]$raw).Trim().TrimStart([char]0xFEFF)
+                if ($line -match '^\[([^]]+)\]$') {
+                    $section = $Matches[1].ToLowerInvariant()
+                } elseif ($line -match '^([a-zA-Z_]+)\s*=\s*(.*?)\s*$') {
+                    if ($section -eq "track") { $track[$Matches[1].ToLowerInvariant()] = $Matches[2] }
+                    if ($section -eq "forge_mod") { $meta[$Matches[1].ToLowerInvariant()] = $Matches[2] }
+                }
+            }
+            if ($track["enabled"] -notmatch '^(?i:true|1|yes)$') { continue }
+            if ($track["format"] -ine "native_lev_vrm") { continue }
+            if ($meta.Count -gt 0 -and
+                ($meta["id"] -notmatch "^[a-z0-9][a-z0-9_-]{0,63}$" -or
+                 $meta["type"] -ine "Track")) { continue }
+            $lev = if ($track["lev"]) { $track["lev"] } else { "data.lev" }
+            $vrm = if ($track["vrm"]) { $track["vrm"] } else { "data.vrm" }
+            if ($lev -notmatch '^[a-zA-Z0-9_.-]+\.lev$' -or
+                $vrm -notmatch '^[a-zA-Z0-9_.-]+\.vrm$') { continue }
+            if (!(Test-Path -LiteralPath (Join-Path $folder.FullName $lev) -PathType Leaf) -or
+                !(Test-Path -LiteralPath (Join-Path $folder.FullName $vrm) -PathType Leaf)) { continue }
+            if (!$found.ContainsKey($folder.Name.ToLowerInvariant())) {
+                $name = if ($track["name"]) { $track["name"].Trim() } else { $folder.Name }
+                $found[$folder.Name.ToLowerInvariant()] = [PSCustomObject]@{
+                    Slug = $folder.Name
+                    Name = $name
+                    Directory = $folder.FullName
+                }
+            }
+        }
+    }
+    return @($found.Values | Sort-Object Name,Slug)
 }
 
 function Get-TrackRows {
@@ -263,6 +314,32 @@ function Get-TrackRows {
         }
     }
 
+    # Audio stays in each custom module, never in the Crash Cove level_03 slot.
+    foreach ($mod in (Get-CustomTrackFolders)) {
+        $file = "music.ogg"
+        if (!(Test-Path -LiteralPath (Join-Path $mod.Directory $file) -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $mod.Directory "track.ogg") -PathType Leaf)) {
+            $file = "track.ogg"
+        }
+        $row = [PSCustomObject]@{
+            ID = ""
+            Name = "[CUSTOM] " + $mod.Name
+            File = $file
+            Paths = New-Object System.Collections.ArrayList
+            HasFinal = (Test-Path -LiteralPath (Join-Path $mod.Directory "music_final.ogg") -PathType Leaf) -or
+                       (Test-Path -LiteralPath (Join-Path $mod.Directory "track_final.ogg") -PathType Leaf)
+            IsReference = $true
+            IsCustom = $true
+            ModFolder = $mod.Directory
+            Slug = $mod.Slug
+        }
+        $full = Join-Path $mod.Directory $file
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+            [void]$row.Paths.Add($full)
+        }
+        $rows["custom:" + $mod.Slug.ToLowerInvariant()] = $row
+    }
+
     return $rows.Values | Sort-Object `
         @{Expression={ if ($null -eq $_.ID -or [string]::IsNullOrWhiteSpace([string]$_.ID)) { 999999 } else { [int]$_.ID }}}, `
         File
@@ -289,7 +366,8 @@ function Refresh-List {
                 $copyText = "—"
             }
 
-            $item = New-Object System.Windows.Forms.ListViewItem(([string]$r.ID))
+            $displayId = if ($r.IsCustom) { "MOD" } else { [string]$r.ID }
+            $item = New-Object System.Windows.Forms.ListViewItem($displayId)
             [void]$item.SubItems.Add($r.Name)
             [void]$item.SubItems.Add($r.File)
             [void]$item.SubItems.Add($copyText)
@@ -463,7 +541,63 @@ function Copy-And-Verify([string]$source, [string]$dest) {
     }
 }
 
+function Set-CustomTrackAudio([string]$folder,[string]$format,[string]$filename) {
+    $ini = Join-Path $folder "track.ini"
+    $lines = @(Get-Content -LiteralPath $ini -Encoding UTF8)
+    $output = New-Object System.Collections.ArrayList
+    $inside = $false
+    $done = $false
+    $values = @("enabled = true", "source = $format", "file = $filename", "custom_samples = 0")
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[([^]]+)\]\s*$') {
+            if ($inside -and !$done) {
+                foreach ($value in $values) { [void]$output.Add($value) }
+                $done = $true
+            }
+            $inside = ($Matches[1] -ieq "music")
+        } elseif ($inside -and $line -match '^\s*(enabled|source|file|custom_samples)\s*=') {
+            continue
+        }
+        [void]$output.Add($line)
+    }
+    if (!$done) {
+        if (!$inside) { [void]$output.Add(""); [void]$output.Add("[music]") }
+        foreach ($value in $values) { [void]$output.Add($value) }
+    }
+    $temp = Join-Path $folder ("track.ini." + [Guid]::NewGuid().ToString("N") + ".tmp")
+    try {
+        $newText = ($output -join [Environment]::NewLine) + [Environment]::NewLine
+        [IO.File]::WriteAllText($temp,$newText,[Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temp -Destination $ini -Force
+    } finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Add-MusicForCustom($modRow) {
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = "Select OGG for " + $modRow.Name
+    $dialog.Filter = "OGG Vorbis (*.ogg)|*.ogg"
+    $dialog.CheckFileExists = $true
+    if ($dialog.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    try {
+        $destination = Join-Path $modRow.ModFolder "music.ogg"
+        $result = Copy-And-Verify $dialog.FileName $destination
+        if (!$result.Success) { throw $result.Error }
+        Set-CustomTrackAudio $modRow.ModFolder "ogg" "music.ogg"
+        Refresh-List
+        $status.Text = "Custom mod OGG installed: $($modRow.Slug)"
+        Show-Info ("Music saved inside mod: " + $destination)
+    } catch {
+        Show-Error ("Could not save custom track music: " + $_.Exception.Message)
+    }
+}
+
 function Add-Music {
+    if ($list.SelectedItems.Count -gt 0 -and $list.SelectedItems[0].Tag.IsCustom) {
+        Add-MusicForCustom $list.SelectedItems[0].Tag
+        return
+    }
     if ($pathBox.Text.Trim() -and $pathBox.Text.Trim() -ne $script:RootPath -and !(Apply-RootFromBox)) { return }
     if ([string]::IsNullOrWhiteSpace($script:RootPath)) {
         Pick-Root
@@ -636,8 +770,8 @@ function Get-SelectedReferenceRow {
     }
 
     $row = $list.SelectedItems[0].Tag
-    if ($row.ID -eq "") {
-        Show-Info "Select a level_XX.ogg file."
+    if ($row.ID -eq "" -and !$row.IsCustom) {
+        Show-Info "Select a level_XX.ogg file or installed custom track."
         return $null
     }
 
@@ -654,12 +788,16 @@ function Create-FinalLap {
     $row = Get-SelectedReferenceRow
     if ($null -eq $row) { return }
 
-    $id = [int]$row.ID
-    $normalName = "level_{0:D2}.ogg" -f $id
-    $finalName = "level_{0:D2}_final.ogg" -f $id
+    $isCustom = [bool]$row.IsCustom
+    $id = if ($isCustom) { $row.Slug } else { [int]$row.ID }
+    $normalName = if ($isCustom) { $row.File } else { "level_{0:D2}.ogg" -f $id }
+    $finalName = if ($isCustom) {
+        [IO.Path]::GetFileNameWithoutExtension($normalName) + "_final.ogg"
+    } else { "level_{0:D2}_final.ogg" -f $id }
+    $musicDestinations = if ($isCustom) { @($row.ModFolder) } else { @(MusicDirs) }
 
     $source = $null
-    foreach ($d in (MusicDirs)) {
+    foreach ($d in $musicDestinations) {
         $candidate = Join-Path $d $normalName
         if (Test-Path $candidate -PathType Leaf) {
             $source = $candidate
@@ -709,7 +847,7 @@ function Create-FinalLap {
         }
 
         $ok = 0
-        foreach ($d in (MusicDirs)) {
+        foreach ($d in $musicDestinations) {
             [IO.Directory]::CreateDirectory($d) | Out-Null
             $dest = Join-Path $d $finalName
             [IO.File]::Copy($temp, $dest, $true)
@@ -764,6 +902,17 @@ function Remove-Selected {
     )
     if ($ans -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
+    if ($row.IsCustom) {
+        foreach ($name in @("music.ogg","track.ogg","music_final.ogg","track_final.ogg")) {
+            $candidate = Join-Path $row.ModFolder $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                Remove-Item -LiteralPath $candidate -Force
+            }
+        }
+        Set-CustomTrackAudio $row.ModFolder "none" ""
+        Refresh-List
+        return
+    }
     $musicDir = Join-Path $script:RootPath "assets\MUSIC_CUSTOM"
     $files = @($row.File)
     if ($row.ID -ne "") {
@@ -989,7 +1138,7 @@ $subtitle.AutoSize = $true
 $subtitle.Location = New-Object System.Drawing.Point(90,51)
 
 $toolVersion = New-Object System.Windows.Forms.Label
-$toolVersion.Text = "TOOLKIT v1.0.7"
+$toolVersion.Text = "TOOLKIT v1.0.8"
 $toolVersion.Font = New-Object System.Drawing.Font("Bahnschrift",8)
 $toolVersion.ForeColor = $C_MUTED
 $toolVersion.BackColor = [System.Drawing.Color]::Transparent
@@ -1142,8 +1291,9 @@ $btnRemoveAll = New-ForgeButton "REMOVE ALL" 105 "danger"
 $btnBackup = New-ForgeButton "BACKUP" 88 "normal"
 $btnRestore = New-ForgeButton "RESTORE" 96 "normal"
 $btnFolder = New-ForgeButton "OPEN FOLDER" 112 "normal"
+$btnRefresh = New-ForgeButton "REFRESH MODS" 120 "normal"
 
-$actions.Controls.AddRange(@($btnAdd,$btnFinal,$btnRemove,$btnRemoveAll,$btnBackup,$btnRestore,$btnFolder))
+$actions.Controls.AddRange(@($btnAdd,$btnFinal,$btnRemove,$btnRemoveAll,$btnBackup,$btnRestore,$btnFolder,$btnRefresh))
 $actionsWrap.Controls.Add($actions)
 
 # Main track browser.
@@ -1258,7 +1408,7 @@ $pathBox.Add_KeyDown({
     }
 })
 $btnAbout.Add_Click({
-    Show-Info "Crash Forge OGG Toolkit v1.0.7`n`nManage custom OGG tracks for Crash Forge: Racing. Select a game folder or type its path and press Enter.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
+    Show-Info "Crash Forge OGG Toolkit v1.0.8`n`nManage custom OGG tracks for Crash Forge: Racing. Select a game folder or type its path and press Enter.`n`nThe 65 provided names are numbered in their original order from 0 to 64. OGG filenames use these decimal numbers.`n`nTrack ID findings: Discord @carisa15demon"
 })
 $btnAdd.Add_Click({ Add-Music })
 $btnFinal.Add_Click({ Create-FinalLap })
@@ -1267,13 +1417,19 @@ $btnRemoveAll.Add_Click({ Remove-AllMusic })
 $btnBackup.Add_Click({ Create-Backup })
 $btnRestore.Add_Click({ Restore-Backup })
 $btnFolder.Add_Click({ Open-MusicFolder })
+$btnRefresh.Add_Click({ Refresh-List })
 $list.Add_DoubleClick({
     if ($list.SelectedItems.Count -gt 0) {
         $row = $list.SelectedItems[0].Tag
-        if ($row.ID -ne "") {
+        if ($row.IsCustom) {
+            Add-MusicForCustom $row
+        } elseif ($row.ID -ne "") {
             Add-MusicForId ([int]$row.ID)
         }
     }
 })
 
+if ($env:CFR_GAME_PATH -and (Test-CtrRoot $env:CFR_GAME_PATH)) {
+    [void](Set-Root $env:CFR_GAME_PATH)
+}
 [void]$form.ShowDialog()

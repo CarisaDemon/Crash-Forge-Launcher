@@ -258,7 +258,16 @@ def _install_verified_zip(mod, game_path, archive):
         raise FeedError("Invalid mod identity or type.")
     if not real_game_status(game_path)["installed"]:
         raise FeedError("Select a valid Crash Forge game install before installing mods.")
-    destination = manager.mod_path(game_path, kind, slug)
+    try:
+        existing_folder, existing_kind = manager._find_existing_web_folder(
+            game_path, slug)
+        destination = manager.mod_path(
+            game_path, kind, slug, title=str(mod.get("title") or slug),
+            prefer_readable=True)
+    except manager.ModManagerError as error:
+        raise FeedError(str(error)) from error
+    if existing_folder and existing_kind != kind:
+        raise FeedError("Web mod ID belongs to a different category")
     parent = destination.parent
     if parent.is_symlink() or destination.is_symlink():
         raise FeedError("Cannot overwrite linked mod directories.")
@@ -311,7 +320,7 @@ def _install_verified_zip(mod, game_path, archive):
                     manager.set_enabled(game_path,kind,slug,False)
                 return installed
             previous_enabled = None
-            if destination.is_dir():
+            if existing_folder is not None:
                 try:
                     previous_enabled = manager.read_mod(
                         game_path,kind,slug).get("enabled")
@@ -322,23 +331,29 @@ def _install_verified_zip(mod, game_path, archive):
         except (zipfile.BadZipFile, manager.ModManagerError,
                 forge_modpacks.ModpackError) as exc:
             raise FeedError(str(exc)) from exc
-        # Previous same-category mod is backed up, never deleted.
+        # Previous same-ID mod is backed up, never discarded. Older installs
+        # named by web ID migrate to the readable folder during reinstall.
+        # Never overwrite a different mod that now occupies the destination.
+        if destination.is_symlink() or (
+                destination.exists() and destination != existing_folder):
+            raise FeedError("Mod destination was claimed by another package")
         if destination.exists() and not destination.is_dir():
             raise FeedError("Existing mod target is not a directory.")
         parent.mkdir(parents=True, exist_ok=True)
         backup = None
-        if destination.is_dir():
+        backup_source = existing_folder
+        if backup_source is not None:
             backups = os.path.join(game_path, ".forge_mod_backups")
             os.makedirs(backups, exist_ok=True)
             ident = manager.CATEGORIES[kind][0]+"_"+slug+"_"
             backup = os.path.join(
                 backups, ident + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
-            os.replace(destination, backup)
+            os.replace(backup_source, backup)
         try:
             os.replace(prepared, destination)
         except BaseException:
-            if backup and not destination.exists():
-                os.replace(backup,destination)
+            if backup and not backup_source.exists():
+                os.replace(backup,backup_source)
             raise
     return str(destination)
 

@@ -711,7 +711,7 @@ class App(tk.Tk):
                 raise ImportErrorMod("Choose a game folder before importing.")
             obj = self.mod_obj_var.get().strip()
             slug = self.mod_id_var.get().strip()
-            target = root / "assets" / "mods" / ("karts" if kind == "kart" else "wheels") / slug
+            target = root / "mods" / slug
             replacing = target.exists()
             if replacing and not messagebox.askyesno(APP_TITLE,
                     "Replace this existing mod? A backup will be saved.\n\n" + str(target)):
@@ -972,6 +972,8 @@ class App(tk.Tk):
             path = path.parents[2]
         elif len(parts) >= 2 and parts[-2:] == ["assets", "mods"]:
             path = path.parents[1]
+        elif path.name.lower() == "mods":
+            path = path.parent
         elif path.name.lower() == "assets":
             path = path.parent
 
@@ -979,7 +981,7 @@ class App(tk.Tk):
 
     def _mods_path_from_game(self, value=None):
         root = self._game_root_from_value(value)
-        return (root / "assets" / "mods" / "racers") if root else None
+        return (root / "mods") if root else None
 
     def _on_game_path_change(self, *_args):
         self._sync_output_path()
@@ -998,7 +1000,7 @@ class App(tk.Tk):
             messagebox.showerror(APP_TITLE, f"Game folder not found:\n{root}")
             return None
 
-        has_exe = (root / "ctr_native.exe").is_file()
+        has_exe = (root / "ctr_native.exe").is_file() or (root / "ctr-native.exe").is_file()
         has_source = ((root / "CMakeLists.txt").is_file() and
                       (root / "game").is_dir() and
                       (root / "platform").is_dir())
@@ -1194,15 +1196,24 @@ class App(tk.Tk):
 
         slug = self.slug_var.get().strip()
         obj_src = Path(self.obj_var.get().strip())
-        out_root = game_root / "assets" / "mods" / "racers"
+        out_root = game_root / "mods"
         out_root.mkdir(parents=True, exist_ok=True)
         self.output_var.set(str(out_root))
         dest = out_root / slug
 
+        if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
+            messagebox.showerror(APP_TITLE,"Unsafe existing mod folder.")
+            return
+        if dest.is_dir() and not (dest / "character.ini").is_file():
+            messagebox.showerror(APP_TITLE,"Mod ID belongs to another category.")
+            return
         if dest.exists():
-            if not messagebox.askyesno(APP_TITLE, f"This folder already exists:\n{dest}\n\nReplace its contents?"):
+            if not messagebox.askyesno(APP_TITLE, f"This mod already exists:\n{dest}\n\nReplace it? A backup will be kept."):
                 return
-            shutil.rmtree(dest)
+            backups = game_root / ".forge_mod_backups" / "character_import"
+            backups.mkdir(parents=True,exist_ok=True)
+            backup = backups / (slug + "_" + __import__("uuid").uuid4().hex[:10])
+            dest.rename(backup)
         dest.mkdir(parents=True, exist_ok=True)
 
         stats = parse_obj(obj_src)
@@ -1270,7 +1281,13 @@ class App(tk.Tk):
             f"offset_z = {oz}\n\n"
             "[assets]\n"
             f"asset_name = {slug}\n"
-            f"icon = {icon_value}\n"
+            f"icon = {icon_value}\n\n"
+            "[forge_mod]\n"
+            f"id = {slug}\n"
+            "type = Character\n"
+            "source = local\n"
+            "version = 1.0\n"
+            "enabled = true\n"
         )
         (dest / "character.ini").write_text(ini, encoding="utf-8")
 
