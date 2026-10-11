@@ -99,6 +99,7 @@ class ForgeLiveMixin:
         self.after(3600000, self._scheduled_launcher_update_check)
         self.after(60000, self._scheduled_release_check)
         self.after(250, self._poll_live_updates)
+        self.after(5000, self._poll_game_play_ready)
 
     def _forge_base_dir(self):
         return (os.path.dirname(os.path.abspath(sys.executable))
@@ -142,7 +143,8 @@ class ForgeLiveMixin:
         """Keep the large UPDATE button; swap the orange/grey emphasis by need.
 
         UPDATE remains clickable when grey so it can manually recheck GitHub.
-        PLAY also stays clickable when grey: we never force a game update.
+        A missing official game file disables and greys PLAY until restored.
+        A newer optional game release never disables an otherwise healthy PLAY.
         """
         buttons = getattr(self, "sidebar_buttons", None)
         if not buttons or len(buttons) < 2:
@@ -154,10 +156,11 @@ class ForgeLiveMixin:
         update_available = installed and bool(
             available_game_update(self.game_install_path, release))
         updating = bool(getattr(self, "game_update_busy", False))
+        missing = installed and bool(getattr(self, "_play_issue", ""))
 
         main.set_label("PLAY" if installed else "INSTALL")
-        main.set_disabled((not installed and not verified) or updating)
-        main.set_accent((installed and not update_available) or
+        main.set_disabled((not installed and not verified) or updating or missing)
+        main.set_accent((installed and not update_available and not missing) or
                         (not installed and verified))
 
         # The user's forged UPDATE button is NEVER removed or replaced by
@@ -167,25 +170,55 @@ class ForgeLiveMixin:
 
     def _refresh_real_install_ui(self):
         status = services.real_game_status(self.game_install_path)
+        previous_issue = getattr(self, "_play_issue", None)
         self.local_game_status = status
+        self._play_issue = (game_launch.launch_issue(self.game_install_path)
+                            if status["installed"] else "")
+        missing = bool(status["installed"] and self._play_issue)
         self._update_primary_game_button()
         if hasattr(self, "build_state_label"):
             self.build_state_label.configure(
-                text="LOCAL GAME FOUND" if status["installed"] else "NOT INSTALLED")
-            self.build_indicator.configure(fg="#56C47A" if status["installed"] else "#D49A4A")
+                text=("FILES MISSING" if missing else
+                      "LOCAL GAME FOUND" if status["installed"] else "NOT INSTALLED"))
+            self.build_indicator.configure(
+                fg="#D49A4A" if missing or not status["installed"] else "#56C47A")
         if (hasattr(self, "download_percent")
                 and not self.mod_download_busy
                 and not self.game_update_busy):
             self.set_download_status(
-                percent=100 if status["installed"] else 0,
-                state="INSTALLED" if status["installed"] else "NOT INSTALLED",
-                filename=status["detail"],
-                amount="Local game executable detected" if status["installed"]
-                else "Select a game folder in Settings",
-                time_remaining="Ready to play" if status["installed"] else "No game found",
+                percent=0 if missing else 100 if status["installed"] else 0,
+                state=("GAME FILES MISSING" if missing else
+                       "INSTALLED" if status["installed"] else "NOT INSTALLED"),
+                filename=self._play_issue if missing else status["detail"],
+                amount=("Restore missing official files or use verified UPDATE"
+                        if missing else
+                        "Local game files found" if status["installed"] else
+                        "Select a game folder in Settings"),
+                time_remaining=("PLAY disabled until files are restored"
+                                if missing else "Ready to play" if status["installed"]
+                                else "No game found"),
             )
+        if hasattr(self, "status_label") and self._play_issue != previous_issue:
+            self.status_label.configure(
+                text=("PLAY DISABLED: " + self._play_issue if missing else
+                      "Game files ready; PLAY is available." if status["installed"]
+                      else "Choose or install your game folder in Settings."))
         if hasattr(self, "hero_canvas"):
             self._paint_hero()
+
+    def _poll_game_play_ready(self):
+        """Notice restored or removed official files without requiring restart."""
+        try:
+            if not getattr(self, "game_update_busy", False):
+                status = services.real_game_status(self.game_install_path)
+                issue = (game_launch.launch_issue(self.game_install_path)
+                         if status["installed"] else "")
+                if (issue != getattr(self, "_play_issue", None) or
+                        bool(status["installed"]) != bool(getattr(
+                            self, "local_game_status", {}).get("installed"))):
+                    self._refresh_real_install_ui()
+        finally:
+            self.after(5000, self._poll_game_play_ready)
 
     def _live_news_fallback(self):
         version, notes = services.real_launcher_changelog(self._forge_base_dir(), limit=2)
@@ -639,16 +672,24 @@ class ForgeLiveMixin:
                     pass
                 self.release_status_var.set(
                     "Installed official game v" + data["version"])
-                self.status_label.configure(
-                    text="Updated " + str(data["files"]) +
-                         " files to v" + data["version"] +
-                         "; previous files backed up.")
-                self.set_download_status(
-                    percent=100, state="INSTALLED",
-                    filename="Crash Forge: Racing · v" + data["version"],
-                    amount=str(data["files"]) + " verified files installed",
-                    time_remaining="Backup preserved",
-                )
+                issue = getattr(self, "_play_issue", "")
+                if issue:
+                    self.status_label.configure(text="PLAY DISABLED: " + issue)
+                    self.set_download_status(
+                        percent=0, state="GAME FILES MISSING", filename=issue,
+                        amount="Restore the missing original/official files",
+                        time_remaining="PLAY disabled until installation is complete")
+                else:
+                    self.status_label.configure(
+                        text="Updated " + str(data["files"]) +
+                             " files to v" + data["version"] +
+                             "; previous files backed up.")
+                    self.set_download_status(
+                        percent=100, state="INSTALLED",
+                        filename="Crash Forge: Racing · v" + data["version"],
+                        amount=str(data["files"]) + " verified files installed",
+                        time_remaining="Backup preserved",
+                    )
             elif event == "game_update_error":
                 self.game_update_busy = False
                 self._refresh_real_install_ui()

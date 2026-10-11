@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.48",
+      "title": "Play Safety: Missing Official Game Files",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.48",
+      "notes": [
+        "PLAY turns grey and disables itself if any file required by the game release is missing.",
+        "Missing file names appear immediately, not only ISO-related errors.",
+        "The button re-enables when the user restores the required files.",
+        "Upcoming verified game packages save a complete official file list for safe checks."
+      ]
+    },
+    {
       "version": "0.3.47",
       "title": "Play, Repair, NEWS & Account Fix",
       "date": "2026-10-11",

@@ -1,5 +1,11 @@
 Crash Forge: Racing Launcher
 
+v0.3.48
+- PLAY is greyed out when any required official game file is missing or empty, not only the ISO.
+- Show missing file names and automatically re-enable PLAY when they are restored.
+- Track full official ZIP file inventories for future game versions.
+- Repair checks all required game files without modifying user mods, saves or disc data.
+
 v0.3.47
 - Play now clearly reports missing original CTR data and early game launch failures.
 - Repair prepares root mods/ without requiring old assets/mods/ or changing personal files.

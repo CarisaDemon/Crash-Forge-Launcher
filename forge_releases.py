@@ -436,7 +436,11 @@ def install_game_release(release, game_path, progress=None):
             with open(marker, "w", encoding="utf-8") as f:
                 json.dump({"version": release["version"], "tag": release["tag"],
                            "release_url": release["url"], "archive_sha256": expected,
-                           "installed_at": int(time.time())}, f, indent=2)
+                           "installed_at": int(time.time()),
+                           # Official ZIP inventory for precise future PLAY checks.
+                           # No ISO, user mods or personal saves are recorded.
+                           "package_files": [relative for _, relative in entries]},
+                          f, indent=2)
             existing.append((marker_relative, marker))
             for index, (relative, source) in enumerate(existing):
                 destination = os.path.join(target_root, *relative.split("/"))

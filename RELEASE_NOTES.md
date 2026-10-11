@@ -1,12 +1,13 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.47/forge-news-v0.3.47.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.48/forge-news-v0.3.48.webp)
 
-# Crash Forge Racing Launcher v0.3.47 - Play, Repair, NEWS & Accounts Fix
+# Crash Forge: Racing Launcher v0.3.48 - Missing Files / PLAY Safety Fix
 
-Small Windows launcher maintenance update.
+Windows launcher maintenance release following v0.3.47.
 
-- **Play** now explains when the selected game install is missing its original assets/ctr-u.bin data. No silent folder switching, game data copying, or fake 'started' status; early launch failures are reported.
-- **Repair** now uses the native mods/ folder beside ctr-native.exe, creating it if needed without modifying personal mods, saves or disc data. It no longer requires old assets/mods/.
-- **Latest NEWS**: the home feature and illustrated NEWS cards show the latest published game or launcher release by its actual publication time. Game and launcher versions, repositories and update channels remain independent.
-- **Forge Hub Account**: last verified profile name/avatar metadata is cached with the encrypted Windows session; slow/offline validation no longer renders a signed-in player as Guest.
+- PLAY now greys out and cannot be clicked when **any required official game release file** is absent or empty, not just the original CTR disc image.
+- Displays which required files are missing in the Installation panel and status. Never silently changes the selected game folder.
+- Supports existing v2.1.0 Windows packages and automatically tracks all official files from future verified game-release ZIPs in their installation manifest.
+- Rechecks files while the launcher stays open: restoring missing files automatically re-enables PLAY.
+- Repair lists missing official files and prepares the correct game-root mods/ folder without deleting mods, saves or disc data. Official game files can be restored using explicit verified game updates.
 
-Windows-only launcher release. No game executable, ISO, saves, mods or controller settings are included. Game updates are optional and published separately.
+The launcher and game have independent release/version/update channels. No ISO, game executable or private mods included. This release does not force a game update.
