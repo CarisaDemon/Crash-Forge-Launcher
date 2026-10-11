@@ -15,6 +15,7 @@ import webbrowser
 from companion_tools.mod_packager import mod_packager_core as engine
 from companion_tools.mod_packager.packager_auth import check_account
 from forge_editor_geometry import initial_geometry
+from forge_editor_layout import WindowLayoutMemory
 from forge_editor_config import selected_game_directory, selected_game_explanation
 from forge_model_preview import (
     PreviewPane, TextureGallery, model_sources_from_folder,
@@ -40,8 +41,9 @@ class Packager(tk.Tk):
         super().__init__()
         self.title("Crash Forge: Racing - Mod Packager")
         self.configure(bg=DARK)
-        self.minsize(770,570)
-        self.geometry(initial_geometry(1110,790) or "1110x790")
+        self.minsize(760,570)
+        # A compact default works at 1080p AND 4:3. Users can still maximize.
+        self.geometry(initial_geometry(1050,715) or "1050x715")
         try:
             ico=bundle("assets/icons/cfr_icon.ico")
             if ico.is_file():self.iconbitmap(str(ico))
@@ -62,55 +64,94 @@ class Packager(tk.Tk):
         self.bg_image=None
         self._ui()
         self._status_bindings()
+        self.layout = WindowLayoutMemory(self, "mod-packager")
+        self.layout.register_pane("left_right", self.main_split)
+        self.layout.register_pane("preview_textures", self.right_split)
+        self.layout.start()
+        self.after(270,self._initial_split_positions)
     def _ui(self):
-        head=tk.Canvas(self,height=140,bg="#16100C",highlightthickness=0)
+        head=tk.Canvas(self,height=115,bg="#16100C",highlightthickness=0)
         head.pack(fill="x")
+        head.pack_propagate(False)
+        self._header_canvas=head
+        self._header_source=None
         image=bundle("assets/Fondo.png")
         if image.is_file():
             try:
-                from PIL import Image,ImageTk,ImageEnhance
+                from PIL import Image,ImageEnhance
                 picture=Image.open(image).convert("RGB")
-                picture=ImageEnhance.Brightness(picture).enhance(.35)
-                picture=picture.resize((1080,180),Image.Resampling.LANCZOS)
-                self.bg_image=ImageTk.PhotoImage(picture)
-                head.create_image(0,0,anchor="nw",image=self.bg_image)
+                self._header_source=ImageEnhance.Brightness(picture).enhance(.38)
             except (ImportError,OSError):pass
-        head.create_rectangle(0,0,8,140,fill=ORANGE,outline="")
-        head.create_text(28,28,text="CRASH FORGE  //  EDITOR",anchor="w",
+        head.bind("<Configure>",self._resize_header)
+        head.create_rectangle(0,0,8,115,fill=ORANGE,outline="",tags="foreground")
+        head.create_text(28,26,text="CRASH FORGE  //  EDITOR",anchor="w",
                          fill=FOREGROUND,font=("Bahnschrift SemiBold",20))
-        head.create_text(29,70,text="MOD PACKAGER",anchor="w",
+        head.create_text(29,65,text="MOD PACKAGER",anchor="w",
                          fill=ORANGE,font=("Bahnschrift SemiBold",25))
-        head.create_text(29,116,text="BUILD • VALIDATE • EXPORT • SHARE",anchor="w",
+        head.create_text(29,103,text="BUILD • VALIDATE • EXPORT • SHARE",anchor="w",
                          fill="#BAC1C8",font=("Bahnschrift",10))
-        content=tk.Frame(self,bg=DARK)
-        content.pack(expand=True,fill="both",padx=18,pady=(12,6))
-        body=tk.Frame(content,bg=DARK)
-        body.pack(side="left",fill="both",expand=True,padx=(0,10))
+        for item in head.find_all():
+            head.addtag_withtag("foreground",item)
+        # Drag either orange separator; dimensions remain user-controlled.
+        self.main_split=tk.PanedWindow(
+            self,orient="horizontal",bg=ORANGE,
+            bd=0,relief="flat",sashwidth=10,sashrelief="flat",
+            opaqueresize=False,showhandle=True,handlesize=13,
+            handlepad=13)
+        self.main_split.pack(fill="both",expand=True,padx=18,pady=(12,6))
+        body=tk.Frame(self.main_split,bg=DARK)
         body.columnconfigure(1,weight=1)
-        showcase=tk.Frame(content,bg=PANEL,
-                          highlightbackground=LINE,highlightthickness=1)
-        showcase.pack(side="right",fill="both",expand=True,padx=(5,0))
-        tk.Label(showcase,text="LIVE ASSET PREVIEW",bg=PANEL,fg=ORANGE,
-                 font=("Bahnschrift SemiBold",11),anchor="w").pack(
-                     fill="x",padx=11,pady=(10,5))
-        self.viewer=PreviewPane(showcase,width=410,height=285)
-        self.viewer.pack(fill="x",padx=9)
-        chooser=tk.Frame(showcase,bg=PANEL)
-        chooser.pack(fill="x",padx=9,pady=(7,1))
+        self.main_split.add(body,minsize=300,stretch="always",padx=5)
+        showcase_shell=tk.Frame(self.main_split,bg=PANEL,
+                                highlightbackground=LINE,highlightthickness=1)
+        self.main_split.add(showcase_shell,minsize=280,stretch="always",padx=5)
+        right_canvas=tk.Canvas(showcase_shell,bg=PANEL,highlightthickness=0)
+        right_scroll=tk.Scrollbar(showcase_shell,orient="vertical",
+                                 command=right_canvas.yview)
+        right_scroll.pack(side="right",fill="y")
+        right_canvas.pack(side="left",fill="both",expand=True)
+        right_canvas.configure(yscrollcommand=right_scroll.set)
+        showcase=tk.Frame(right_canvas,bg=PANEL)
+        frame_id=right_canvas.create_window((0,0),window=showcase,anchor="nw")
+        showcase.bind("<Configure>",lambda e:right_canvas.configure(
+            scrollregion=right_canvas.bbox("all")))
+        self._right_canvas=right_canvas
+        def right_resize(e):
+            right_canvas.itemconfigure(frame_id,width=e.width)
+            self.right_split.configure(height=max(350,e.height-80))
+        right_canvas.bind("<Configure>",right_resize)
+
+        tk.Label(showcase,text="LIVE ASSET PREVIEW  •  DRAG ORANGE DIVIDERS",
+                 bg=PANEL,fg=ORANGE,font=("Bahnschrift SemiBold",10),
+                 anchor="w").pack(fill="x",padx=10,pady=(8,4))
+        self.right_split=tk.PanedWindow(
+            showcase,orient="vertical",bg=ORANGE,bd=0,
+            sashwidth=9,sashrelief="flat",opaqueresize=False,
+            showhandle=True,handlesize=12,handlepad=12,
+            height=490)
+        self.right_split.pack(fill="both",expand=True,padx=8,pady=(0,5))
+        self.preview_panel=tk.Frame(self.right_split,bg=PANEL)
+        self.right_split.add(self.preview_panel,minsize=140,stretch="always")
+        self.viewer=PreviewPane(self.preview_panel,width=540,height=365)
+        self.viewer.pack(fill="both",expand=True)
+        chooser=tk.Frame(self.preview_panel,bg=PANEL)
+        chooser.pack(fill="x",pady=(4,1))
         tk.Label(chooser,text="Model",fg=MUTED,bg=PANEL).pack(side="left",padx=(0,5))
         self.model_choices=ttk.Combobox(
             chooser,textvariable=self.preview_selected,state="readonly")
         self.model_choices.pack(side="left",fill="x",expand=True)
         self.model_choices.bind("<<ComboboxSelected>>",
                                 lambda e:self._show_selected_model())
+        self.texture_panel=tk.Frame(self.right_split,bg=PANEL)
+        self.right_split.add(self.texture_panel,minsize=90,stretch="always")
         self.gallery=TextureGallery(
-            showcase,editable=False,on_preview=self.viewer.set_variant)
-        self.gallery.pack(fill="x",padx=7,pady=(8,2))
+            self.texture_panel,editable=False,on_preview=self.viewer.set_variant)
+        self.gallery.pack(fill="both",expand=True,padx=2)
         tk.Label(showcase,
-            text="OBJ: textured preview  |  LEV: geometry + vertex colors. "
-                 "VRM mapping needs runtime decoding.",
-            bg=PANEL,fg=MUTED,wraplength=430,justify="left",
-            font=("Bahnschrift",8)).pack(fill="x",padx=11,pady=(5,7))
+            text="Drag orange bars to resize • Settings are saved on close. "
+                 "OBJ uses UV textures; LEV preview uses vertex colors.",
+            bg=PANEL,fg=MUTED,wraplength=690,justify="left",
+            font=("Bahnschrift",8)).pack(fill="x",padx=11,pady=(3,5))
         def label(text,row):
             tk.Label(body,text=text,bg=DARK,fg=ORANGE,anchor="w",
                      font=("Bahnschrift SemiBold",10)).grid(
@@ -171,6 +212,44 @@ class Packager(tk.Tk):
                      secondary=True).pack(side="left",padx=12)
         tk.Label(row,text="Web ID assigned when published",bg="#10141A",
                  fg=MUTED,font=("Bahnschrift",9)).pack(side="right")
+    def _initial_split_positions(self):
+        if not self.winfo_exists():
+            return
+        if not self.layout.saved.get("panes"):
+            for pane,ratio in ((self.main_split,.48),(self.right_split,.65)):
+                if pane.winfo_width()>60 and pane.winfo_height()>60:
+                    horizontal=pane.cget("orient")=="horizontal"
+                    size=pane.winfo_width() if horizontal else pane.winfo_height()
+                    point=int(size*ratio)
+                    pane.sash_place(0,point if horizontal else 1,
+                                    1 if horizontal else point)
+        else:
+            self.layout.restore_panes()
+
+    def _resize_header(self,event):
+        """Cover the entire title bar on all monitors and window formats."""
+        art=self._header_source
+        if art is None or event.width < 20 or event.height < 20:
+            return
+        try:
+            from PIL import Image, ImageTk
+            width,height=event.width,event.height
+            scale=max(width/art.width,height/art.height)
+            resized=art.resize((max(width,int(art.width*scale)),
+                               max(height,int(art.height*scale))),
+                               Image.Resampling.LANCZOS)
+            crop_x=(resized.width-width)//2
+            crop_y=(resized.height-height)//2
+            self.bg_image=ImageTk.PhotoImage(
+                resized.crop((crop_x,crop_y,crop_x+width,crop_y+height)))
+            canvas=self._header_canvas
+            canvas.delete("background")
+            canvas.create_image(0,0,anchor="nw",image=self.bg_image,
+                                tags="background")
+            canvas.tag_lower("background")
+        except (OSError,ValueError):
+            pass
+
     def _status_bindings(self):
         def validate(*args):
             if self.folder or self.selected:

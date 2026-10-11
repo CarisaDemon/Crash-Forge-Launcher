@@ -14,6 +14,7 @@ import struct
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk, ImageDraw
+from forge_preview_rasterizer import render_scene
 
 MAX_SOURCE_SIZE = 70 * 1024 * 1024
 MAX_VERTICES = 150000
@@ -212,8 +213,12 @@ class PreviewPane(ttk.Frame):
         self.texture_override=None
         self.category=category
         self.detail=tk.StringVar(value="Select an OBJ model or LEV track for preview.")
-        outer=tk.Frame(self,bg="#121820",highlightthickness=1,highlightbackground="#444B54")
+        # Resizable viewport; the outer PanedWindow sash controls its height.
+        # No fixed 232px cap or photo-induced Tk geometry feedback.
+        outer=tk.Frame(self,bg="#121820",height=self.height,
+                       highlightthickness=1,highlightbackground="#444B54")
         outer.pack(fill="both",expand=True)
+        outer.pack_propagate(False)
         self.image=tk.Label(outer,bg="#0c141c",fg="#ffac73",text="3D PREVIEW\nSELECT FILE")
         self.image.pack(fill="both",expand=True,padx=3,pady=3)
         self.image.bind("<ButtonPress-1>",self._down)
@@ -233,8 +238,8 @@ class PreviewPane(ttk.Frame):
                  font=("Segoe UI",8)).pack(fill="x")
     def _configure(self,event):
         if event.width>30 and event.height>30:
-            self.width=min(960,event.width)
-            self.height=min(620,event.height)
+            self.width=event.width
+            self.height=event.height
             self._schedule()
     def load(self, path, *, category=None, texture_override=None):
         if category:self.category=category
@@ -304,71 +309,19 @@ class PreviewPane(ttk.Frame):
                 self._texture_images[path]=None
         return self._texture_images[path]
     def _paint(self):
-        self._scheduled=None
-        if not self.winfo_exists() or not self.scene:return
-        w=max(120,min(self.width,960))
-        h=max(95,min(self.height,620))
-        scene=self.scene
-        image=Image.new("RGB",(w,h),(12,20,29))
-        draw=ImageDraw.Draw(image)
-        for x in range(0,w,40):
-            draw.line((x,h-16,x+60,h-65),fill=(21,34,43),width=1)
-        draw.line((0,h-16,w,h-16),fill=(43,66,73),width=1)
-        cy,sy=math.cos(self.yaw),math.sin(self.yaw)
-        cp,sp=math.cos(self.pitch),math.sin(self.pitch)
-        scale=2.4/self.normalizer
-        transform=[]
-        factor=min(w,h)*1.3*self.zoom
-        for vx,vy,vz in scene.vertices:
-            x=(vx-self.center[0])*scale
-            y=(vy-self.center[1])*scale
-            z=(vz-self.center[2])*scale
-            xo=cy*x+sy*z
-            zo=-sy*x+cy*z
-            yo=cp*y-sp*zo
-            depth=sp*y+cp*zo
-            camera=max(.35,4.8-depth)
-            transform.append((w/2+factor*xo/camera,
-                              h/2-factor*yo/camera,
-                              depth))
-        rendered=[]
-        faces=scene.faces
-        step=max(1,math.ceil(len(faces)/MAX_RENDER_TRIANGLES))
-        for index in range(0,len(faces),step):
-            a,b,c,ua,ub,uc,material=faces[index]
-            p0,p1,p2=transform[a],transform[b],transform[c]
-            # Outside entire viewport, skip costly fill.
-            if (max(p0[0],p1[0],p2[0]) < -20 or
-                min(p0[0],p1[0],p2[0]) > w+20 or
-                max(p0[1],p1[1],p2[1]) < -20 or
-                min(p0[1],p1[1],p2[1]) > h+20):
-                continue
-            if scene.colors:
-                base=tuple(int((scene.colors[a][i]+scene.colors[b][i]+
-                               scene.colors[c][i])/3) for i in range(3))
-            else:
-                texture=self._texture(self._source_texture(material))
-                if texture and None not in (ua,ub,uc) and scene.uvs:
-                    uu=sum(scene.uvs[i][0] for i in (ua,ub,uc))/3
-                    vv=sum(scene.uvs[i][1] for i in (ua,ub,uc))/3
-                    sample=(int((uu%1)*max(1,texture.width-1)),
-                            int(((1-vv)%1)*max(1,texture.height-1)))
-                    base=texture.getpixel(sample)
-                else:
-                    base=(160,176,190) if scene.kind=="OBJ" else (110,140,155)
-            # Simple diffuse light from upper/front left, preserve original color.
-            ux,uy=p1[0]-p0[0],p1[1]-p0[1]
-            vx,vy=p2[0]-p0[0],p2[1]-p0[1]
-            winding=ux*vy-uy*vx
-            brightness=.78 if winding<0 else .88
-            mean_depth=(p0[2]+p1[2]+p2[2])/3
-            color=tuple(min(255,int(channel*brightness)+12) for channel in base)
-            rendered.append((mean_depth,(p0[:2],p1[:2],p2[:2]),color))
-        rendered.sort(key=lambda record:record[0])
-        for _depth,points,color in rendered:
-            draw.polygon(points,fill=color)
-        # subtle silhouette grid / bounds
-        draw.text((9,8),self.category.upper()+"  •  "+scene.kind+" PREVIEW",fill=(253,153,79))
+        self._scheduled = None
+        if not self.winfo_exists() or not self.scene:
+            return
+        # Correct per-pixel UV atlas mapping, z-buffer and vertex colors.
+        # Renderer is independent of Tk so all four native editor categories
+        # share it and its output can be regression-tested without opening GUI.
+        image = render_scene(
+            self.scene, max(120, self.width),
+            max(95, self.height),
+            yaw=self.yaw, pitch=self.pitch, zoom=self.zoom,
+            center=self.center, normalizer=self.normalizer,
+            texture_loader=self._texture, texture_override=self.texture_override,
+            category=self.category)
         self._preview_photo=ImageTk.PhotoImage(image)
         self.image.configure(image=self._preview_photo,text="")
 
@@ -385,8 +338,8 @@ class TextureGallery(tk.Frame):
                  bg="#111821",font=("Segoe UI Semibold",10),
                  anchor="w").pack(fill="x",padx=7,pady=(5,2))
         outer=tk.Frame(self,bg="#111821")
-        outer.pack(fill="x")
-        self.canvas=tk.Canvas(outer,height=166,bg="#111821",highlightthickness=0)
+        outer.pack(fill="both",expand=True)
+        self.canvas=tk.Canvas(outer,height=121,bg="#111821",highlightthickness=0)
         self.canvas.pack(side="left",fill="both",expand=True)
         scroll=tk.Scrollbar(outer,orient="vertical",command=self.canvas.yview)
         scroll.pack(side="right",fill="y")

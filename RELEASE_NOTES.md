@@ -1,13 +1,14 @@
-![Crash Forge Launcher official background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.50/forge-news-v0.3.50.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.51/forge-news-v0.3.51.webp)
 
-# Crash Forge: Racing Launcher v0.3.50 - Forge Hub Session & Mod Packager Account Fix
+# Crash Forge: Racing Launcher v0.3.51 - Resizable Editor Workspaces
 
-Windows snapshot / corrective update to v0.3.49.
+Windows editor layout and preview quality-of-life update.
 
-- **Forge Hub account connection:** Supabase can reject expired/rotated refresh tokens with HTTP 400. The launcher now treats these as expired credentials, rather than looping on Reconnecting forever. It clearly offers **Sign in again**, without deleting your account or personal data. Genuine connectivity issues use bounded retry with backoff.
-- **Token safety across multiple tools:** refresh-token renewal is synchronized between the launcher and separate editor EXEs on Windows; an editor can adopt the latest DPAPI-protected session when another process has already rotated it.
-- **Sign-in required for Mod Packager:** selecting it in the launcher prompts for Forge Hub authentication when signed out. Opening the bundled CrashForgeModPackager.exe directly also requires a **server-verified** Forge Hub session before any packaging interface opens. The same Forge Hub user identity is used; no additional accounts are created.
-- **Prior v0.3.49 features retained:** Model Importer, OGG and CSEQ share the game path saved in Launcher Settings, the Editor selector remains on the launcher's monitor, native Character/Kart/Wheels/Track Mod Packager includes previews, and arbitrary kart texture names remain supported.
-- **Release artwork:** this version uses the launcher’s own Fondo.png rather than reusing unrelated illustrations.
+- **Resizable Mod Packager panels:** drag orange dividers to decide how much room the mod form, real UV-mapped 3D preview, and texture thumbnails occupy. The model is no longer locked to an overly large or tiny fixed viewport.
+- **Resizable Model Importer:** drag the separator between 3D preview and texture gallery, change the overall preview section height with its slider, and adjust the character settings columns on wider screens. Narrow and 4:3 windows continue to stack content accessibly.
+- **Remember your workspace:** both tools independently save window size, screen position, maximized state and adjustable divider positions under the local user's app settings. The layout is restored when reopened, including on a secondary monitor; disconnected-screen positions are ignored.
+- **UV-correct model rendering:** OBJ previews now draw the actual texture pixels rather than one sampled color per triangle, use proper UV interpolation and depth buffering, and keep all original model assets untouched.
+- **Fondo.png release illustration:** uses the launcher background requested for v0.3.51.
+- **Existing safeguards retained:** sign-in is still required to open Mod Packager; account fixes, game path selection, browser Creator Studio, and the independent game updater are unchanged.
 
-A revoked/expired session cannot be silently restored by the launcher; if you see Sign in again after upgrading, authorize once in My Account (GitHub sign-in is supported). No user mod, ISO, save, secret token or game executable is distributed.
+Native LEV track preview shows geometry and vertex colors only; full VRM atlas decoding is not supported. No original CTR game data, mods, saves or account credentials are included in the Windows release.

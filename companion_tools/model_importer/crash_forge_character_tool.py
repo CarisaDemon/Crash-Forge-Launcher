@@ -12,6 +12,7 @@ if not getattr(sys, "frozen", False):
 from forge_editor_config import (find_game_installation, selected_game_directory,
                                  selected_game_explanation, valid_game_root)
 from forge_editor_geometry import initial_geometry
+from forge_editor_layout import WindowLayoutMemory
 from forge_model_preview import PreviewPane, TextureGallery, texture_sources_from_folder
 from crash_forge_kart_colors import install_colors, scan_palette, KartColorError
 from crash_forge_model_imports import import_mod, ImportErrorMod
@@ -204,6 +205,13 @@ class App(tk.Tk):
         self._sync_output_path()
         self._update_icon_controls()
         self._show_section("home")
+        self.layout = WindowLayoutMemory(self, "model-importer")
+        self.layout.register_pane("preview_textures", self.preview_split)
+        # Character columns use a draggable custom sash, preserving the
+        # existing stacked view on small 4:3 windows.
+        self._char_ratio = self.layout.get_number("character_columns_percent",50,20,80)
+        self.layout.start()
+        self.after(320,self._restore_preview_layout)
 
     def _set_windows_identity(self):
         try:
@@ -446,12 +454,17 @@ class App(tk.Tk):
         columns.pack(fill="both", expand=True)
         self.char_columns = columns
         columns.columnconfigure(0, weight=1, uniform="main")
-        columns.columnconfigure(1, weight=1, uniform="main")
+        columns.columnconfigure(1, weight=0, uniform="")
+        columns.columnconfigure(2, weight=1, uniform="main")
         columns.rowconfigure(0, weight=1)
         left = ttk.Frame(columns)
         right = ttk.Frame(columns)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        right.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
+        self._char_sash = tk.Frame(columns,bg=ACCENT,width=9,cursor="sb_h_double_arrow")
+        self._char_sash.grid(row=0,column=1,sticky="ns")
+        self._char_sash.bind("<B1-Motion>",self._drag_character_column)
+        self._char_sash.bind("<ButtonRelease-1>",self._remember_character_column)
         self._columns_frame = columns
         self._left_column = left
         self._right_column = right
@@ -586,12 +599,31 @@ class App(tk.Tk):
         self.preview_card, visual = self._card(root)
         self.preview_card.pack(fill="x",pady=(0,12))
         self._section_title(visual,"LIVE 3D PREVIEW",
-            "Characters / karts / wheels: OBJ + MTL textures. Tracks: LEV geometry + vertex colors.")
-        self.model_viewer = PreviewPane(visual,width=820,height=300)
-        self.model_viewer.pack(fill="x",expand=True,pady=(7,0))
+            "Drag the orange separator to resize the textured model and the thumbnails.")
+        self.preview_split = tk.PanedWindow(
+            visual,orient="vertical",bg=ACCENT,bd=0,relief="flat",
+            sashwidth=10,sashrelief="flat",showhandle=True,handlesize=13,
+            opaqueresize=False,height=510)
+        self.preview_split.pack(fill="both",expand=True,pady=(7,0))
+        self._model_preview_region=tk.Frame(self.preview_split,bg=PANEL)
+        self.preview_split.add(self._model_preview_region,minsize=125,stretch="always")
+        self.model_viewer = PreviewPane(self._model_preview_region,width=820,height=345)
+        self.model_viewer.pack(fill="both",expand=True)
+        self._texture_preview_region=tk.Frame(self.preview_split,bg=PANEL)
+        self.preview_split.add(self._texture_preview_region,minsize=90,stretch="always")
         self.preview_textures=TextureGallery(
-            visual,editable=False,on_preview=self._preview_texture)
-        self.preview_textures.pack(fill="x",pady=(8,0))
+            self._texture_preview_region,editable=False,
+            on_preview=self._preview_texture)
+        self.preview_textures.pack(fill="both",expand=True)
+        height_row=ttk.Frame(visual,style="Panel.TFrame")
+        height_row.pack(fill="x",pady=(7,0))
+        ttk.Label(height_row,text="Preview panel height",style="Muted.TLabel").pack(side="left")
+        self._preview_height_var=tk.IntVar(value=510)
+        self._preview_height_slider=ttk.Scale(
+            height_row,from_=320,to=900,orient="horizontal",
+            command=self._resize_preview_height)
+        self._preview_height_slider.pack(side="left",fill="x",expand=True,padx=(8,10))
+        ttk.Label(height_row,text="DRAG TO RESIZE",style="Muted.TLabel").pack(side="right")
         actions = ttk.Frame(root)
         actions.pack(fill="x", pady=(14, 0))
         self.analyze_button = ttk.Button(actions, text="Analyze / Validate", command=self.analyze)
@@ -604,6 +636,45 @@ class App(tk.Tk):
         self._actions_frame = actions
         self._load_forge_background()
         self.after_idle(lambda: self._update_responsive_layout(self.winfo_width()))
+
+    def _restore_preview_layout(self):
+        if not self.winfo_exists():
+            return
+        height=self.layout.get_number("preview_panel_height",510,320,900)
+        self.preview_split.configure(height=height)
+        self._preview_height_slider.set(height)
+        self.layout.restore_panes()
+        self._update_responsive_layout(self.scroll_canvas.winfo_width())
+        self._apply_character_columns()
+
+    def _resize_preview_height(self,value):
+        try:
+            height=max(320,min(900,int(float(value))))
+        except (TypeError,ValueError):
+            return
+        self.preview_split.configure(height=height)
+        if hasattr(self,"layout"):
+            self.layout.put_number("preview_panel_height",height)
+
+    def _drag_character_column(self,event):
+        if self._columns_stacked or not hasattr(self,"_char_sash"):
+            return
+        width=max(1,self._columns_frame.winfo_width())
+        x=event.x_root-self._columns_frame.winfo_rootx()
+        self._char_ratio=max(20,min(80,round(x*100/width)))
+        self._apply_character_columns()
+
+    def _apply_character_columns(self):
+        if self._columns_stacked:
+            return
+        fraction=getattr(self,"_char_ratio",50)
+        self._columns_frame.columnconfigure(0,weight=fraction)
+        self._columns_frame.columnconfigure(2,weight=100-fraction)
+
+    def _remember_character_column(self,_event=None):
+        if hasattr(self,"layout"):
+            self.layout.put_number(
+                "character_columns_percent",getattr(self,"_char_ratio",50))
 
     def _refresh_art_banner(self, event=None):
         art = getattr(self, "_forge_bg_source", None)
@@ -705,6 +776,8 @@ class App(tk.Tk):
                 self.mount_frame.pack_forget()
                 self.preview_card.pack(fill="x",pady=(0,12),after=self.mod_card)
         self._refresh_current_preview()
+        if section != "home" and hasattr(self,"layout"):
+            self.after(80,self.layout.restore_panes)
         self.scroll_canvas.yview_moveto(0)
         self._on_content_configure()
 
@@ -972,6 +1045,14 @@ class App(tk.Tk):
     def _on_mousewheel(self, event):
         if getattr(self, "report", None) is not None and event.widget is self.report:
             return
+        # Mouse wheel over the 3D preview controls ZOOM, not the page scroll.
+        if (hasattr(self,"model_viewer") and
+                event.widget is self.model_viewer.image):
+            return
+        if hasattr(self,"preview_textures"):
+            gallery=self.preview_textures
+            if event.widget is gallery.canvas:
+                return
 
         if getattr(event, "num", None) == 4:
             step = -3
@@ -996,17 +1077,21 @@ class App(tk.Tk):
             self._columns_stacked = stacked
             self._left_column.grid_forget()
             self._right_column.grid_forget()
-
+            self._char_sash.grid_forget()
             if stacked:
-                self._columns_frame.columnconfigure(0, weight=1, uniform="")
-                self._columns_frame.columnconfigure(1, weight=0, uniform="")
-                self._left_column.grid(row=0, column=0, sticky="nsew")
-                self._right_column.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+                self._columns_frame.columnconfigure(0,weight=1,uniform="")
+                self._columns_frame.columnconfigure(1,weight=0,uniform="")
+                self._columns_frame.columnconfigure(2,weight=0,uniform="")
+                self._left_column.grid(row=0,column=0,sticky="nsew")
+                self._right_column.grid(row=1,column=0,sticky="nsew",pady=(12,0))
             else:
-                self._columns_frame.columnconfigure(0, weight=1, uniform="main")
-                self._columns_frame.columnconfigure(1, weight=1, uniform="main")
-                self._left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-                self._right_column.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+                self._columns_frame.columnconfigure(0,weight=50,uniform="main")
+                self._columns_frame.columnconfigure(1,weight=0,uniform="")
+                self._columns_frame.columnconfigure(2,weight=50,uniform="main")
+                self._left_column.grid(row=0,column=0,sticky="nsew",padx=(0,4))
+                self._char_sash.grid(row=0,column=1,sticky="ns")
+                self._right_column.grid(row=0,column=2,sticky="nsew",padx=(4,0))
+                self._apply_character_columns()
 
         if compact != self._compact_controls:
             self._compact_controls = compact

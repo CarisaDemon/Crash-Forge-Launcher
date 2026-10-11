@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.51
+- Drag to resize Mod Packager's form, 3D preview and texture thumbnails.
+- Make Model Importer preview, texture gallery and character columns adjustable.
+- Save and restore size, position, maximize state and editor panel splitters.
+- Improve UV-correct textured previews on all supported model categories.
+- Use the original launcher background as the release illustration.
+
 v0.3.50
 - Fix the endless Reconnecting loop for expired or rotated Forge Hub refresh tokens.
 - Coordinate refresh tokens across Windows launcher and editor processes.
