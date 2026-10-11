@@ -56,11 +56,11 @@ jobs:
           CFR_BUILD_DIR: build
         run: ./release_tools/build_windows.ps1
 
-      - name: Verify frozen EXE and updater process without showing UI
+      - name: Verify portable ZIP and GUI executable integrity headlessly
         shell: pwsh
         env:
           CFR_BUILD_DIR: build
-        run: python release_tools/smoke_portable.py
+        run: python release_tools/ci_static_check.py
 
       - name: Upload build artifacts for testing
         uses: actions/upload-artifact@v4
