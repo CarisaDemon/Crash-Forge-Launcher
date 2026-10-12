@@ -21,6 +21,7 @@ ALLOWED_EXTENSIONS = frozenset({
     ".cfg", ".json", ".txt", ".md", ".wav", ".ogg", ".cseq", ".bin",
     ".dds", ".webp", ".gif", ".xml", ".dat", ".gltf", ".glb", ".lev", ".vrm",
 })
+IGNORED_BACKUP_EXTENSIONS = frozenset({".bak", ".old", ".tmp"})
 MAX_UPLOAD = 50 * 1024 * 1024
 MAX_EXPANDED = 1024 * 1024 * 1024
 MAX_ITEMS = 2000
@@ -29,6 +30,47 @@ VERSION = re.compile(r"[a-zA-Z0-9._+-]{1,28}\Z")
 
 class PackageError(ValueError):
     pass
+
+
+def normalize_character_ini(data: bytes) -> bytes:
+    """Keep character bodies modular and remove obsolete has_wheels.
+
+    The original INI is never modified. Game wheels are selected from kart/
+    wheels modules; even old character INIs with has_wheels=true must not make
+    the racer contain a kart. Preserve author-defined modular_body values.
+    """
+    bom = data.startswith(b"\xef\xbb\xbf")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PackageError("character.ini must be UTF-8.") from exc
+    lines = text.replace("\r\n", "\n").splitlines()
+    result = []
+    section = ""
+    found = False
+    modular = False
+    for line in lines:
+        header = re.match(r"^\s*\[([^\]]+)\]\s*$", line)
+        if header:
+            section = header.group(1).strip().casefold()
+            if section == "character":
+                found = True
+            result.append(line)
+            continue
+        if section == "character":
+            if re.match(r"^\s*has_wheels\s*=", line, re.I):
+                continue
+            if re.match(r"^\s*(modular_body|separate_vehicle)\s*=", line, re.I):
+                modular = True
+        result.append(line)
+    if not found:
+        raise PackageError("character.ini needs [character].")
+    if not modular:
+        index = next(i for i, line in enumerate(result)
+                     if re.match(r"^\s*\[character\]\s*$", line, re.I))
+        result.insert(index + 1, "modular_body = true")
+    encoded = ("\n".join(result).rstrip() + "\n").encode("utf-8")
+    return (b"\xef\xbb\xbf" + encoded) if bom else encoded
 
 def folder_name(title):
     value = unicodedata.normalize("NFKD", str(title)).encode("ascii", "ignore").decode("ascii")
@@ -63,12 +105,15 @@ def _list_assets(folder=None, chosen_files=None):
             if path.is_file():
                 if not path.resolve().is_relative_to(root):
                     raise PackageError("Unsafe mod path.")
+                if path.suffix.lower() in IGNORED_BACKUP_EXTENSIONS:
+                    continue  # Keep editor backups on disk; never include them in the ZIP.
                 pairs.append((_safe_relative(path.relative_to(root).as_posix()),path))
     else:
         files=[Path(p) for p in (chosen_files or [])]
-        pairs=[(_safe_relative(path.name),path) for path in files]
-        if not all(p.is_file() and not p.is_symlink() for _,p in pairs):
+        if not all(p.is_file() and not p.is_symlink() for p in files):
             raise PackageError("One of the selected files is missing or linked.")
+        pairs=[(_safe_relative(path.name),path) for path in files
+               if path.suffix.lower() not in IGNORED_BACKUP_EXTENSIONS]
     if not pairs or len(pairs)>MAX_ITEMS:
         raise PackageError("Choose 1 to 2000 mod files.")
     seen=set()
@@ -87,7 +132,8 @@ def _native_ini(data,title,kind,version,asset_stem,lev="",vrm=""):
     if data is None:
         native=("["+section+"]\nname = "+title+"\nenabled = true\n")
         if kind=="Character":
-            native+=("fallback_retail = crash\nengine = balanced\nhas_wheels = false\n"
+            native+=("fallback_retail = crash\nengine = balanced\n"
+                     "modular_body = true\n"
                      "\n[model]\nscale = 1.0\n\n[assets]\nasset_name = "+asset_stem+"\n")
         elif kind in ("Kart","Wheels"):
             native+="\n[model]\nasset_name = "+asset_stem+"\nscale = 1.0\n"
@@ -99,8 +145,11 @@ def _native_ini(data,title,kind,version,asset_stem,lev="",vrm=""):
     cfg=configparser.ConfigParser(interpolation=None,strict=False)
     try:cfg.read_string(native)
     except configparser.Error as e:raise PackageError("Invalid native INI: "+ini) from e
-    if not any(s.lower()==section for s in cfg.sections()):
+    if not any(s.lower()==section or (
+            kind=="Wheels" and s.lower()=="wheels") for s in cfg.sections()):
         raise PackageError(ini+" needs ["+section+"] section.")
+    if kind=="Character":
+        native=normalize_character_ini(native.encode("utf-8")).decode("utf-8-sig")
     original=""
     if cfg.has_section("forge_mod"):
         existing=cfg.get("forge_mod","type",fallback="")
