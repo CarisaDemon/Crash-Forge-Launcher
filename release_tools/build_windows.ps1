@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp", "forge-news-v0.3.49.webp", "forge-news-v0.3.50.webp", "forge-news-v0.3.51.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp", "forge-news-v0.3.49.webp", "forge-news-v0.3.50.webp", "forge-news-v0.3.51.webp", "forge-news-v0.3.52.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
@@ -43,7 +43,7 @@ Write-Output "Building bundled Crash Forge Model Importer v1.8..."
 $modelImporterBackground = (Join-Path $Source "assets\Fondo.png") + ";assets"
 $modelImporterIcon = (Join-Path $Source "assets\icons\cfr_icon.ico") + ";assets/icons"
 $modelImporterLogo = (Join-Path $Source "assets\icons\cfr_icon.png") + ";assets/icons"
-& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --name "CrashForgeModelImporter" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $modelImporterBackground --add-data $modelImporterIcon --add-data $modelImporterLogo --distpath (Join-Path $BuildRoot "model_importer") --workpath (Join-Path $workRoot "model_importer") --specpath $specRoot (Join-Path $Source "companion_tools\model_importer\crash_forge_character_tool.py")
+& $Python -m PyInstaller --noconfirm --clean --noupx --onefile --windowed --paths $Source --collect-all moderngl --collect-all glcontext --name "CrashForgeModelImporter" --icon (Join-Path $Source "assets\icons\cfr_icon.ico") --add-data $modelImporterBackground --add-data $modelImporterIcon --add-data $modelImporterLogo --distpath (Join-Path $BuildRoot "model_importer") --workpath (Join-Path $workRoot "model_importer") --specpath $specRoot (Join-Path $Source "companion_tools\model_importer\crash_forge_character_tool.py")
 if($LASTEXITCODE -ne 0){throw "Model Importer build failed"}
 # Importer is included in verified launcher ZIP and updated automatically.
 $toolsTarget = Join-Path $exeDir "_internal\editor_tools"
