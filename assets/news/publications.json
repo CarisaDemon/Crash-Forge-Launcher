@@ -3,6 +3,17 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.54",
+      "title": "Forge Hub Session Reliability",
+      "date": "2026-10-12",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.54",
+      "notes": [
+        "Keep Forge Hub logins securely saved when using the launcher and editors.",
+        "Fix concurrent session renewal so an older session cannot overwrite the current login.",
+        "No changes to the installed game, mods, or saved data."
+      ]
+    },
+    {
       "version": "0.3.53",
       "title": "Global Game Status & Development News",
       "date": "2026-10-12",

@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.54
+- Keep Forge Hub sessions signed in across launcher and editor use.
+- Prevent stale profile updates from overwriting newer login tokens.
+- Improve secure saved-session sync without changing game files.
+
 v0.3.53
 - Global Game Status shows official public releases, not the game installed on this PC.
 - Installation Status still reports local game files and update progress.

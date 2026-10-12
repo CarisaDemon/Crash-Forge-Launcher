@@ -1,10 +1,10 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.53/forge-news-v0.3.53.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.54/forge-news-v0.3.54.webp)
 
-# Crash Forge: Racing Launcher v0.3.53 — Global Game Status
+# Crash Forge: Racing Launcher v0.3.54 — Forge Hub Session Reliability
 
-A small Windows launcher update. Launcher releases and game releases remain independent.
+A small Windows launcher update. Launcher and game updates remain independent.
 
-- **Global Game Status:** Shows whether an official Crash Forge: Racing release is available, separately from the game installed on this PC. Local files and installation information remain in Installation Status.
-- **Game development:** We're continuing to improve Crash Forge: Racing. More game updates are coming soon.
+- **Reliable sign-in:** Prevent one launcher/editor from overwriting a newer Forge Hub login session saved by another.
+- **Persistent account:** Keep the encrypted Forge Hub account session synchronized during profile checks and token renewal.
 
-This release updates the launcher only. The game binary is distributed and updated separately.
+Previously revoked sessions may require one fresh sign-in; valid sessions are kept automatically. No game files, mods, or personal saves are changed.
