@@ -79,6 +79,26 @@ def main() -> int:
     for relative in embedded:
         assert (INSTALL / relative).is_file(), f"Missing portable file {relative}"
 
+    # The release cover must really be the user's own Fondo.png background,
+    # not a generic illustration. Fail this GitHub release if it is missing.
+    from PIL import Image, ImageChops, ImageStat
+    source_art = ROOT / "assets" / "Fondo.png"
+    release_rel = f"_internal/assets/news/forge-news-v{current}.webp"
+    art = INSTALL / release_rel
+    featured = INSTALL / "_internal/assets/news/latest_update.webp"
+    assert source_art.is_file() and art.is_file(), "Release artwork was not built"
+    with (Image.open(source_art) as source, Image.open(art) as cover,
+          Image.open(featured) as featured_image):
+        src, news, latest = (
+            source.convert("RGB"), cover.convert("RGB"),
+            featured_image.convert("RGB"))
+        assert src.size == news.size == latest.size, "NEWS background dimensions mismatch"
+        delta = ImageStat.Stat(ImageChops.difference(src, news)).mean
+        assert max(delta) < 12.0, f"Release art doesn't match Fondo.png: {delta}"
+        latest_delta = ImageStat.Stat(ImageChops.difference(news, latest)).mean
+        assert max(latest_delta) < 2.0, "Featured NEWS doesn't match release art"
+    print("PASS v" + current + " artwork matches original launcher Fondo.png")
+
     with zipfile.ZipFile(ZIP) as archive:
         entries = archive.infolist()
         names = {i.filename.replace("\\", "/") for i in entries if not i.is_dir()}
@@ -91,6 +111,7 @@ def main() -> int:
             rel = exe.relative_to(INSTALL).as_posix()
             assert rel in names, f"ZIP missing {rel}"
             assert archive.getinfo(rel).file_size == exe.stat().st_size
+        assert release_rel in names, f"ZIP missing release artwork: {release_rel}"
         assert all(not n.lower().endswith((".iso", ".bin", ".cue", ".mcr", ".sav"))
                    for n in names), "Release contains game/private disc data"
         assert archive.testzip() is None, "ZIP failed CRC check"
