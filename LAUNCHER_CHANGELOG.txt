@@ -1,5 +1,16 @@
 Crash Forge: Racing Launcher
 
+v0.3.52
+- Uninstall Forge Hub mods from cards or details with confirmation and Recycle Bin rollback.
+- Remove owned Modpack components safely without touching unrelated mods.
+- Create, preview and export Modpacks containing 2-60 independent native mods.
+- Automatically load and save character/kart/wheels INIs with backup and safe offset editing.
+- Default character imports to modular body; omit obsolete has_wheels in new exports.
+- Include responsive GPU-capable model previews, original smoke/fire visualizer fallback.
+- Preserve web account login when logging out of the Windows launcher.
+- Creator Studio supports Modpack ZIPs and native [wheel]/[wheels] upload compatibility.
+- Original launcher Fondo.png used as the featured update image.
+
 v0.3.51
 - Drag to resize Mod Packager's form, 3D preview and texture thumbnails.
 - Make Model Importer preview, texture gallery and character columns adjustable.
