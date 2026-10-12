@@ -208,7 +208,7 @@ class ForgeLiveMixin:
         missing = bool(status["installed"] and self._play_issue)
         self._update_primary_game_button()
         # Global game publication status, never derived from the local install.
-        self._refresh_global_game_status()
+        ForgeLiveMixin._refresh_global_game_status(self)
         if (hasattr(self, "download_percent")
                 and not self.mod_download_busy
                 and not self.game_update_busy):
