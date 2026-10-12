@@ -43,7 +43,8 @@ def _read_ini(path: Path, section: str):
             cfg.read_file(stream)
     except (OSError, UnicodeError, configparser.Error) as exc:
         raise ModpackError("Invalid or unreadable INI: " + path.name) from exc
-    if not cfg.has_section(section):
+    if not cfg.has_section(section) and not (
+            section=="wheel" and cfg.has_section("wheels")):
         raise ModpackError(path.name + " requires [" + section + "]")
     return cfg
 
@@ -85,11 +86,15 @@ def inspect_modpack(contents: str | Path):
             if not ini.is_file() or ini.is_symlink():
                 raise ModpackError(slug + " requires its own " + expected_file)
             details = _read_ini(ini, section)
-            title = details.get(section, "name", fallback="").strip()
+            source_section = (
+                "wheels" if section=="wheel" and
+                not details.has_section("wheel") and
+                details.has_section("wheels") else section)
+            title = details.get(source_section, "name", fallback="").strip()
             if not title:
                 raise ModpackError(slug + " is missing its INI name.")
             for key in ("id", "slug"):
-                declared = details.get(section, key, fallback="").strip()
+                declared = details.get(source_section, key, fallback="").strip()
                 if declared and declared != slug:
                     raise ModpackError(slug + ": INI " + key + " must match its folder.")
             for path in directory.rglob("*"):
