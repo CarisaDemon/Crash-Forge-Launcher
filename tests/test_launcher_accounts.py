@@ -167,7 +167,7 @@ class AccountClientTests(unittest.TestCase):
         self.assertEqual(result["username"],"modder_name")
         self.assertEqual(calls[-1][1]["user_id"],UUID)
 
-    def test_desktop_logout_keeps_browser_and_packager_sessions(self):
+    def test_desktop_logout_does_not_revoke_forge_hub_web_session(self):
         client=self.make()
         client._save_session(SESSION)
         seen=[]
