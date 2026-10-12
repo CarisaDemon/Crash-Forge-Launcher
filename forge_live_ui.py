@@ -168,6 +168,30 @@ class ForgeLiveMixin:
         update.set_disabled(updating)
         update.set_accent(bool(update_available))
 
+    def _refresh_global_game_status(self):
+        """Show public game release availability, not a local executable state."""
+        label = getattr(self, "build_state_label", None)
+        if label is None:
+            return
+        release = getattr(self, "latest_game_release", None)
+        busy = bool(getattr(self, "release_check_busy", False))
+        checked = bool(getattr(self, "release_last_check", 0))
+        if release:
+            version = str(release.get("version") or "").strip()
+            verified = bool(release.get("verified_package"))
+            text = ("PUBLIC v" + version) if version else "PUBLIC RELEASE"
+            if not verified:
+                text = "RELEASE LISTED"
+            color = "#56C47A" if verified else "#D49A4A"
+        elif busy or not checked:
+            text, color = "CHECKING RELEASES", "#D49A4A"
+        else:
+            text, color = "NO PUBLIC RELEASE", "#D49A4A"
+        label.configure(text=text)
+        indicator = getattr(self, "build_indicator", None)
+        if indicator is not None:
+            indicator.configure(fg=color)
+
     def _refresh_real_install_ui(self):
         status = services.real_game_status(self.game_install_path)
         previous_issue = getattr(self, "_play_issue", None)
@@ -176,12 +200,8 @@ class ForgeLiveMixin:
                             if status["installed"] else "")
         missing = bool(status["installed"] and self._play_issue)
         self._update_primary_game_button()
-        if hasattr(self, "build_state_label"):
-            self.build_state_label.configure(
-                text=("FILES MISSING" if missing else
-                      "LOCAL GAME FOUND" if status["installed"] else "NOT INSTALLED"))
-            self.build_indicator.configure(
-                fg="#D49A4A" if missing or not status["installed"] else "#56C47A")
+        # Global game publication status, never derived from the local install.
+        self._refresh_global_game_status()
         if (hasattr(self, "download_percent")
                 and not self.mod_download_busy
                 and not self.game_update_busy):
@@ -286,11 +306,11 @@ class ForgeLiveMixin:
         unread = self._unread_game_announcement is not None
         label = getattr(self, "news_game_indicator", None)
         if label is not None:
-            label.configure(text="â— NEW GAME RELEASE" if unread else "",
+            label.configure(text="\u25cf NEW GAME RELEASE" if unread else "",
                             cursor="hand2" if unread else "arrow")
         tab = getattr(self, "_dashboard_buttons", {}).get("NEWS")
         if tab is not None:
-            tab.configure(text="NEWS  â—" if unread else "NEWS")
+            tab.configure(text="NEWS  \u25cf" if unread else "NEWS")
 
     def _acknowledge_game_news(self, event=None):
         unread = getattr(self, "_unread_game_announcement", None)
@@ -923,6 +943,7 @@ class ForgeLiveMixin:
         if not manual and time.time() < self._release_retry_after:
             return
         self.release_check_busy = True
+        self._refresh_global_game_status()
         self.release_status_var.set("Checking GitHub Releases...")
         if manual:
             self.status_label.configure(text="Checking official GitHub Releases...")
@@ -937,6 +958,7 @@ class ForgeLiveMixin:
 
     def _show_release_check(self, release, manual=False, install_requested=False):
         self.latest_game_release = release
+        self._refresh_global_game_status()
         self._update_primary_game_button()
         self.release_last_check = time.time()
         # The game NEWS fetch owns game articles independently. Never insert
