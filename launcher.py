@@ -23,8 +23,9 @@ import forge_editor_registry as editor_registry
 import forge_editor_geometry as editor_geometry
 import forge_editor_config as editor_config
 import forge_mod_manager as mod_manager
+import forge_mod_uninstall as mod_uninstall
 import forge_account_badge as account_badge
-from forge_dialogs import ask_mod_install, preview_newer_version
+from forge_dialogs import ask_mod_install, ask_mod_uninstall, preview_newer_version
 from forge_account_client import (AccountClient, AccountError,
     AccountSessionExpired, AccountServiceUnavailable)
 from forge_account_ui import open_account_dialog
@@ -3753,6 +3754,60 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         )
         self._render_hub_cards()
 
+    def _uninstall_community_mod(self, mod):
+        """Delete only the verified local Forge Hub installation, on consent.
+
+        A publication remains available on Forge Hub. Physical native INIs,
+        not a stale launcher JSON receipt, determine ownership.
+        """
+        if (os.environ.get("CFR_SCREENSHOT_PREVIEW") == "1" or
+                getattr(self, "mod_download_busy", False) or
+                getattr(self, "game_update_busy", False)):
+            self.hub_status_label.configure(
+                text="Wait for the current installation before uninstalling mods.")
+            return
+        installed = mod.get("_installed") or {}
+        if (installed.get("origin") != "forge_hub" or
+                not installed.get("manageable")):
+            self.hub_status_label.configure(
+                text="Only installed Forge Hub mods can be uninstalled here.")
+            return
+        game_path = str(self.game_install_path or "")
+        try:
+            plan = mod_uninstall.plan_web_uninstall(
+                game_path, installed["type"], installed["id"])
+        except (mod_uninstall.UninstallError, OSError,
+                mod_manager.ModManagerError) as error:
+            self.hub_status_label.configure(
+                text="Cannot uninstall: " + str(error)[:155])
+            return
+        consent = ask_mod_uninstall(
+            self, plan,
+            icon_path=os.path.join(
+                self._forge_base_dir(), "assets", "icons", "cfr_icon.png"))
+        if not consent:
+            return
+        self.mod_download_busy = True
+        self.hub_status_label.configure(
+            text="Removing " + plan.title + " from the installed game...")
+        self.set_download_status(
+            percent=0, state="UNINSTALLING MOD",
+            filename=plan.title,amount="Moving mod to Windows Recycle Bin",
+            time_remaining="")
+
+        def worker():
+            try:
+                removed = mod_uninstall.uninstall_web_mod(
+                    game_path, plan.category, plan.mod_id,
+                    expected_paths=plan.paths)
+                self.online_queue.put(("mod_uninstall_ok",(removed,game_path)))
+            except Exception as error:
+                self.online_queue.put(
+                    ("mod_uninstall_error",(plan.title,str(error))))
+
+        threading.Thread(
+            target=worker,daemon=True,name="ForgeModUninstall").start()
+
     def _toggle_installed_mod(self, mod):
         """Write the game's REAL native enabled INI, not a launcher-only flag."""
         if getattr(self, "mod_download_busy", False) or getattr(self, "game_update_busy", False):
@@ -4431,6 +4486,15 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._hub_button(
             buttons, "DETAILS", lambda m=mod: self._show_mod_details(m),
         ).pack(side="right")
+        # A separate row prevents INSTALL / DISABLE / DETAILS / UNINSTALL
+        # from clipping on narrow 4:3 or windowed layouts.
+        if (installed and installed.get("origin")=="forge_hub" and
+                installed.get("manageable")):
+            self._hub_button(
+                body,"UNINSTALL",
+                lambda m=mod: self._uninstall_community_mod(m),
+                enabled=True,accent=False,
+            ).pack(anchor="e",pady=(8,0))
 
         return card
 
@@ -4769,6 +4833,15 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             self._hub_button(
                 footer, "OPEN LOCATION", open_package_location
             ).pack(side="left")
+
+        if (installed and installed.get("origin")=="forge_hub" and
+                installed.get("manageable")):
+            bottom_action=tk.Frame(body,bg="#101318")
+            bottom_action.pack(fill="x",pady=(7,0))
+            self._hub_button(
+                bottom_action,"UNINSTALL MOD",
+                lambda m=mod:self._uninstall_community_mod(m),
+            ).pack(side="right")
 
         self.hub_status_label.configure(
             text=f"Viewing details for {mod.get('title')}."
