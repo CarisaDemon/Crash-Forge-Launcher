@@ -524,6 +524,9 @@ class AccountClient:
                 pass
         if old:
             try:
-                self._request(SUPABASE + "/auth/v1/logout", token=old)
+                # GoTrue defaults to global logout; that silently revokes
+                # the independent Forge Hub website and Packager sessions.
+                # Revoke ONLY the current desktop session.
+                self._request(SUPABASE + "/auth/v1/logout?scope=local", token=old)
             except AccountError:
                 pass
