@@ -51,7 +51,7 @@ class GlobalGameStatusTests(TestCase):
         source = (ROOT / "launcher.py").read_text(encoding="utf-8")
         live_code = (ROOT / "forge_live_ui.py").read_text(encoding="utf-8")
         self.assertIn('text="GLOBAL GAME STATUS"', source)
-        self.assertIn('state="INSTALLED" if status["installed"]', live_code)
+        self.assertIn('"INSTALLED" if status["installed"] else "NOT INSTALLED"', live_code)
         self.assertIn('ForgeLiveMixin._refresh_global_game_status(self)', live_code)
 
 
