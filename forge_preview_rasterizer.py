@@ -50,7 +50,8 @@ def _project(scene, width, height, yaw, pitch, zoom, center, normalizer):
 
 def render_scene(scene, width, height, *, yaw=.7, pitch=.45, zoom=1.0,
                  center=(0.0, 0.0, 0.0), normalizer=1.0,
-                 texture_loader=None, texture_override=None, category="Character"):
+                 texture_loader=None, texture_override=None, category="Character",
+                 draw_header=True):
     """Return a PIL RGB preview. Texture loader: callable(Path) -> PIL Image | None.
 
     The depth buffer prevents overlapping faces from painting over nearer skin.
@@ -148,6 +149,7 @@ def render_scene(scene, width, height, *, yaw=.7, pitch=.45, zoom=1.0,
 
     result = Image.fromarray(base, mode="RGB")
     draw = ImageDraw.Draw(result)
-    draw.text((9, 8), str(category).upper()+"  /  "+scene.kind+"  /  TEXTURED PREVIEW",
-              fill=(255, 161, 85))
+    if draw_header:
+        draw.text((9, 8), str(category).upper()+"  /  "+scene.kind+"  /  TEXTURED PREVIEW",
+                  fill=(255, 161, 85))
     return result
