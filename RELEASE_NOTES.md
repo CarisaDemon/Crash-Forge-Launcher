@@ -13,3 +13,5 @@ Windows-only launcher and independent modding tools update. **The game binary is
 - **Original background artwork:** This update uses the actual `assets/Fondo.png` launcher background as its illustration, both in NEWS and on the release page.
 
 This portable Windows ZIP includes the launcher, updater, OGG toolkit, CSEQ toolkit, Model Importer and Mod Packager. It contains no game executable, retail disc data, private saves or user mods. For custom native game behavior, update the game separately when its corresponding release becomes available.
+
+The bundled Model Importer includes all native preview helper modules; no external Python installation is required.
