@@ -238,6 +238,35 @@ def ask_mod_install(parent, mod, local=False, icon_path=None, preview=False,
     )
 
 
+def ask_mod_uninstall(parent, plan, icon_path=None, preview=False):
+    """Confirm removal of one web ID (or the exact children owned by a pack).
+
+    The caller revalidates all paths again in its worker after the user accepts.
+    The web publication is NEVER changed by this local-only action.
+    """
+    title=_text(plan.title or "Community mod",100)
+    folder=plan.paths[-1].name
+    extras=len(plan.paths)-1
+    description=(str(extras)+" owned modules + pack inventory" if extras
+                 else "1 installed module")
+    return _show_confirmation(
+        parent,
+        category="UNINSTALL MOD",
+        heading="Uninstall " + title + "?",
+        subheading="Remove this installation from Crash Forge: Racing?",
+        rows=[
+            ("MOD", _text(plan.category,35)+" / "+_text(plan.mod_id,66)),
+            ("DESTINATION", "mods/"+_text(folder,70)),
+            ("CONTENTS", description),
+        ],
+        note=("The mod files will be sent to Windows Recycle Bin. "+
+              "Other mods and game files remain untouched. "+
+              "The mod stays online in Forge Hub and can be reinstalled."),
+        accept="UNINSTALL",cancel="KEEP MOD",
+        icon_path=icon_path,preview=preview,
+    )
+
+
 def ask_game_update(parent, release, installed, folder, icon_path=None):
     """Modern version of the official GitHub release confirmation."""
     asset = release.get("asset") or {}
