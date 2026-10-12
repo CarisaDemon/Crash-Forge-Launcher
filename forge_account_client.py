@@ -184,23 +184,43 @@ class AccountClient:
         except (OSError, AccountError, ValueError, TypeError, UnicodeError):
             return False
 
-    def _persist(self):
-        if not self.persist:
+    def _persist(self, *, profile_only=False):
+        """Never overwrite a newer encrypted refresh token with stale profile data.
+
+        Two separate EXEs (launcher and editor) may hold valid access tokens at
+        the same time. Refresh tokens rotate, so a late avatar/name update from
+        the older EXE must not save its *previous* refresh token back to disk.
+        Serialize both writers and compare against the latest encrypted token.
+        """
+        if not self.persist or not self._refresh:
             return
-        if not self._refresh:
-            return
-        data = json.dumps({"schema": 1, "refresh_token": self._refresh,
-                           "profile": self._cached_profile},
-                          separators=(",", ":")).encode("utf-8")
-        encoded = _dpapi(data)
-        self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.root / "session.dat.tmp"
-        try:
-            tmp.write_bytes(encoded)
-            os.replace(tmp, self.root / "session.dat")
-        finally:
-            if tmp.exists():
-                tmp.unlink()
+        with _account_refresh_mutex(self.root):
+            path = self.root / "session.dat"
+            if profile_only:
+                try:
+                    if not path.is_file() or path.stat().st_size > 16384:
+                        return
+                    saved = json.loads(_dpapi(path.read_bytes(), decrypt=True))
+                    if (saved.get("schema") != 1 or
+                            saved.get("refresh_token") != self._refresh):
+                        # Another EXE refreshed or replaced the session.
+                        # Keep its token and profile; our display cache is local.
+                        return
+                except (OSError, ValueError, TypeError, AccountError, UnicodeError):
+                    return
+            data = json.dumps({"schema": 1, "refresh_token": self._refresh,
+                               "profile": self._cached_profile},
+                              separators=(",", ":")).encode("utf-8")
+            encoded = _dpapi(data)
+            self.root.mkdir(parents=True, exist_ok=True)
+            # A unique temporary name avoids collisions with older launchers.
+            tmp = self.root / ("session.dat.tmp." + secrets.token_hex(8))
+            try:
+                tmp.write_bytes(encoded)
+                os.replace(tmp, path)
+            finally:
+                if tmp.exists():
+                    tmp.unlink()
 
     def _request(self, url: str, payload=None, *, token=None, method="POST"):
         parsed = urllib.parse.urlsplit(url)
@@ -431,7 +451,7 @@ class AccountClient:
                 for key in ("username", "display_name", "avatar_url")
             }
             try:
-                self._persist()  # Persist public display name with the DPAPI token.
+                self._persist(profile_only=True)  # Never roll back a rotated token.
             except (OSError, AccountError):
                 pass  # Account stays signed in even if the name cannot be cached.
         return result
