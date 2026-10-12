@@ -67,6 +67,8 @@ class ForgeLiveMixin:
         self._launcher_update_retry_after = 0.0
         self._release_install_after_pending = False
         self.latest_game_release = None
+        self._global_release_checked = False
+        self._global_release_error = False
         self._release_retry_after = 0.0
         self.online_cfg = services.read_online_config(self._forge_base_dir())
         self.installed_mods_record = self._load_installed_mods_record()
@@ -175,7 +177,8 @@ class ForgeLiveMixin:
             return
         release = getattr(self, "latest_game_release", None)
         busy = bool(getattr(self, "release_check_busy", False))
-        checked = bool(getattr(self, "release_last_check", 0))
+        checked = bool(getattr(self, "_global_release_checked", False))
+        error = bool(getattr(self, "_global_release_error", False))
         if release:
             version = str(release.get("version") or "").strip()
             verified = bool(release.get("verified_package"))
@@ -183,7 +186,11 @@ class ForgeLiveMixin:
             if not verified:
                 text = "RELEASE LISTED"
             color = "#56C47A" if verified else "#D49A4A"
-        elif busy or not checked:
+        elif busy:
+            text, color = "CHECKING RELEASES", "#D49A4A"
+        elif error:
+            text, color = "STATUS UNAVAILABLE", "#D49A4A"
+        elif not checked:
             text, color = "CHECKING RELEASES", "#D49A4A"
         else:
             text, color = "NO PUBLIC RELEASE", "#D49A4A"
@@ -658,6 +665,8 @@ class ForgeLiveMixin:
                     manual = True
                 self._release_install_after_pending = False
                 self._release_retry_after = time.time() + 15 * 60
+                self._global_release_error = True
+                self._refresh_global_game_status()
                 self.release_status_var.set("GitHub unavailable · retry in 15 min")
                 if manual:
                     self.status_label.configure(
@@ -958,9 +967,11 @@ class ForgeLiveMixin:
 
     def _show_release_check(self, release, manual=False, install_requested=False):
         self.latest_game_release = release
+        self._global_release_checked = True
+        self._global_release_error = False
+        self.release_last_check = time.time()
         self._refresh_global_game_status()
         self._update_primary_game_button()
-        self.release_last_check = time.time()
         # The game NEWS fetch owns game articles independently. Never insert
         # an extra duplicate card during a manual game update check.
         self.github_release_news = []
