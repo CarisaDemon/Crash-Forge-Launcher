@@ -524,9 +524,11 @@ class AccountClient:
                 pass
         if old:
             try:
-                # GoTrue defaults to global logout; that silently revokes
-                # the independent Forge Hub website and Packager sessions.
-                # Revoke ONLY the current desktop session.
+                # GoTrue defaults to scope=global. Global logout revokes
+                # *all* active Forge Hub sessions (including GitHub web tabs),
+                # making the website display a cached signed-in profile that
+                # the launcher bridge then rejects as session_not_found.
+                # Logout from this Windows EXE must revoke only its own token.
                 self._request(SUPABASE + "/auth/v1/logout?scope=local", token=old)
             except AccountError:
                 pass
