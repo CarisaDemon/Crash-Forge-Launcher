@@ -1,5 +1,10 @@
 Crash Forge: Racing Launcher
 
+v0.3.53
+- Global Game Status shows official public releases, not the game installed on this PC.
+- Installation Status still reports local game files and update progress.
+- We're continuing to improve Crash Forge: Racing. More game updates are coming soon.
+
 v0.3.52
 - Uninstall Forge Hub mods from cards or details with confirmation and Recycle Bin rollback.
 - Remove owned Modpack components safely without touching unrelated mods.

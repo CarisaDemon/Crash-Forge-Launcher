@@ -2560,7 +2560,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         tk.Label(
             status_copy,
-            text="BUILD STATUS",
+            text="GLOBAL GAME STATUS",
             bg="#101318",
             fg="#6E747C",
             font=("Bahnschrift SemiBold", 7),
@@ -2580,7 +2580,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
         self.build_state_label = tk.Label(
             ready_row,
-            text="NOT INSTALLED",
+            text="CHECKING RELEASES",
             bg="#101318",
             fg="#D7D9D6",
             font=("Bahnschrift SemiBold", 9),

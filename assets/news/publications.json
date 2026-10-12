@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.53",
+      "title": "Global Game Status & Development News",
+      "date": "2026-10-12",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.53",
+      "notes": [
+        "Global Game Status now shows official public game release availability, not the game installed locally.",
+        "Installation Status continues to show local game files and installation details.",
+        "We're continuing to improve Crash Forge: Racing. More game updates are coming soon.",
+        "Launcher and game updates remain separate."
+      ]
+    },
+    {
       "version": "0.3.52",
       "title": "Modpacks, Uninstall & Modular Editors",
       "date": "2026-10-11",
