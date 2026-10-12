@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 import webbrowser
 
 from companion_tools.mod_packager import mod_packager_core as engine
+from companion_tools.mod_packager import mod_packager_modpacks as bundles
 from companion_tools.mod_packager.packager_auth import check_account
 from forge_editor_geometry import initial_geometry
 from forge_editor_layout import WindowLayoutMemory
@@ -59,11 +60,15 @@ class Packager(tk.Tk):
         self.status=tk.StringVar(value="Choose a category and your native mod assets.")
         self.folder=None
         self.selected=[]
+        # Each member of a modpack is an independent, validated native mod.
+        # Nothing is copied into, or deleted from, user source folders.
+        self.pack_mods=[]
         self.preview_files=[]
         self.preview_selected=tk.StringVar()
         self.bg_image=None
         self._ui()
         self._status_bindings()
+        self._on_mode_change()
         self.layout = WindowLayoutMemory(self, "mod-packager")
         self.layout.register_pane("left_right", self.main_split)
         self.layout.register_pane("preview_textures", self.right_split)
@@ -166,7 +171,7 @@ class Packager(tk.Tk):
         label("MOD NAME",0);field(self.title_var,0)
         label("CATEGORY",1)
         combo=ttk.Combobox(body,textvariable=self.kind,
-                           values=list(engine.CATEGORIES),state="readonly")
+                           values=(*engine.CATEGORIES,"Modpack"),state="readonly")
         combo.grid(row=1,column=1,sticky="ew",pady=5,ipady=6)
         label("AUTHOR",2);field(self.author,2)
         label("VERSION",3);field(self.version,3)
@@ -178,16 +183,46 @@ class Packager(tk.Tk):
         self.description.grid(row=4,column=1,sticky="ew",pady=6)
         label("SOURCE FILES",5)
         select=tk.Frame(body,bg=DARK)
+        self.single_source_controls=select
         select.grid(row=5,column=1,sticky="ew")
         self._button(select,"CHOOSE FOLDER",self.select_folder).pack(side="left",padx=(0,8),pady=4)
         self._button(select,"SELECT FILES",self.select_files,secondary=True).pack(side="left",pady=4)
         tk.Label(body,textvariable=self.path_label,bg=DARK,fg=MUTED,
                  font=("Bahnschrift",9),wraplength=690,anchor="w",
                  justify="left").grid(row=6,column=1,sticky="ew",pady=(2,7))
+        self.pack_controls=tk.Frame(body,bg=DARK)
+        pack_buttons=tk.Frame(self.pack_controls,bg=DARK)
+        pack_buttons.pack(fill="x",pady=(1,4))
+        self._button(pack_buttons,"ADD MOD FOLDER",
+                     self.add_pack_folder).pack(side="left",padx=(0,6))
+        self._button(pack_buttons,"REMOVE",
+                     self.remove_pack_selected,secondary=True).pack(side="left",padx=(0,6))
+        self._button(pack_buttons,"CLEAR",
+                     self.clear_pack_folders,secondary=True).pack(side="left")
+        pack_list_frame=tk.Frame(self.pack_controls,bg=DARK)
+        pack_list_frame.pack(fill="x")
+        self.pack_list=tk.Listbox(
+            pack_list_frame,height=4,selectmode=tk.EXTENDED,
+            bg=FIELD,fg=FOREGROUND,selectbackground="#99450F",
+            selectforeground="#FFFFFF",relief="flat",
+            highlightthickness=1,highlightbackground=LINE,
+            font=("Bahnschrift",9),activestyle="none")
+        pack_scroll=tk.Scrollbar(pack_list_frame,orient="vertical",
+                                 command=self.pack_list.yview)
+        self.pack_list.configure(yscrollcommand=pack_scroll.set)
+        self.pack_list.pack(side="left",fill="x",expand=True)
+        pack_scroll.pack(side="right",fill="y")
+        self.pack_list.bind("<<ListboxSelect>>",self._show_pack_member)
+        tk.Label(self.pack_controls,
+                 text="One ZIP, 2-60 mods, each with its OWN INI. "
+                      "The Launcher installs each separately into the game's mods folder.",
+                 bg=DARK,fg="#D6A677",justify="left",wraplength=500,
+                 font=("Bahnschrift",9)).pack(fill="x",pady=(4,0))
+        self.pack_controls.grid(row=7,column=0,columnspan=2,sticky="ew")
         tk.Label(body,text="Native OBJ models or LEV+VRM tracks only. "
                  "No ISO, saves, scripts, executables or private game files.",
                  bg=DARK,fg="#D6A677",font=("Bahnschrift",9),
-                 justify="left",wraplength=440).grid(row=7,column=0,
+                 justify="left",wraplength=440).grid(row=8,column=0,
                      columnspan=2,sticky="w",pady=6)
         selected=selected_game_directory(source_file=__file__)
         self.game_reference=tk.StringVar(
@@ -195,11 +230,11 @@ class Packager(tk.Tk):
         tk.Label(body,text="GAME PATH FROM LAUNCHER SETTINGS",
                  fg=ORANGE,bg=DARK,anchor="w",
                  font=("Bahnschrift SemiBold",8)).grid(
-                     row=8,column=0,columnspan=2,sticky="w",pady=(9,1))
+                     row=9,column=0,columnspan=2,sticky="w",pady=(9,1))
         tk.Label(body,textvariable=self.game_reference,
                  fg=MUTED,bg=DARK,justify="left",anchor="w",
                  wraplength=440,font=("Bahnschrift",8)).grid(
-                     row=9,column=0,columnspan=2,sticky="w")
+                     row=10,column=0,columnspan=2,sticky="w")
         footer=tk.Frame(self,bg="#10141A")
         footer.pack(fill="x",side="bottom")
         tk.Label(footer,textvariable=self.status,fg="#D9B592",
@@ -207,7 +242,8 @@ class Packager(tk.Tk):
                  font=("Bahnschrift",10)).pack(fill="x",padx=22,pady=(12,4))
         row=tk.Frame(footer,bg="#10141A")
         row.pack(fill="x",padx=22,pady=(5,16))
-        self._button(row,"EXPORT ZIP",self.export).pack(side="left")
+        self.export_button=self._button(row,"EXPORT ZIP",self.export)
+        self.export_button.pack(side="left")
         self._button(row,"OPEN FORGE HUB",lambda:webbrowser.open(WEB_URL),
                      secondary=True).pack(side="left",padx=12)
         tk.Label(row,text="Web ID assigned when published",bg="#10141A",
@@ -251,11 +287,74 @@ class Packager(tk.Tk):
             pass
 
     def _status_bindings(self):
-        def validate(*args):
+        self.kind.trace_add("write",lambda *_:self._on_mode_change())
+
+    def _on_mode_change(self):
+        multi=self.kind.get()=="Modpack"
+        if multi:
+            self.single_source_controls.grid_remove()
+            self.pack_controls.grid()
+            self.export_button.configure(text="EXPORT MODPACK ZIP")
+            self._pack_summary()
+        else:
+            self.pack_controls.grid_remove()
+            self.single_source_controls.grid()
+            self.export_button.configure(text="EXPORT ZIP")
             if self.folder or self.selected:
                 self.status.set("Ready to validate and export the selected assets.")
-        self.kind.trace_add("write",validate)
-        self.kind.trace_add("write",lambda *_:self._refresh_preview())
+        self._refresh_preview()
+
+    def _pack_summary(self):
+        count=len(self.pack_mods)
+        self.path_label.set(f"{count} independent mods selected (2-60 required).")
+        self.status.set(
+            f"MODPACK: {count} mods selected; "
+            "each will install independently in mods/<name>/")
+
+    def add_pack_folder(self):
+        selected=filedialog.askdirectory(
+            parent=self,title="Add an existing native CFR mod folder",
+            initialdir=(str(self.pack_mods[-1]["folder"].parent)
+                        if self.pack_mods else None))
+        if not selected:return
+        try:
+            item=bundles.inspect_mod_folder(selected)
+            if any(entry["folder"]==item["folder"] for entry in self.pack_mods):
+                raise engine.PackageError("This mod is already in the pack.")
+            if any(entry["id"].casefold()==item["id"].casefold()
+                   for entry in self.pack_mods):
+                raise engine.PackageError(
+                    "Duplicate mod ID: "+item["id"])
+            if len(self.pack_mods)>=bundles.MAX_COMPONENTS:
+                raise engine.PackageError("Modpack supports at most 60 mods.")
+        except (engine.PackageError,OSError,ValueError) as exc:
+            messagebox.showerror("Invalid mod folder",str(exc),parent=self)
+            return
+        self.pack_mods.append(item)
+        self.pack_list.insert(tk.END,
+            f'{item["category"]} | {item["name"]} | {item["id"]}')
+        self.pack_list.selection_clear(0,tk.END)
+        self.pack_list.selection_set(tk.END)
+        self._pack_summary()
+        self._refresh_preview()
+
+    def remove_pack_selected(self):
+        selection=self.pack_list.curselection()
+        for i in reversed(selection):
+            del self.pack_mods[i]
+            self.pack_list.delete(i)
+        self._pack_summary()
+        self._refresh_preview()
+
+    def clear_pack_folders(self):
+        self.pack_mods.clear()
+        self.pack_list.delete(0,tk.END)
+        self._pack_summary()
+        self._refresh_preview()
+
+    def _show_pack_member(self,_event=None):
+        if self.kind.get()=="Modpack":
+            self._refresh_preview()
     def _button(self,parent,text,callback,secondary=False):
         return tk.Button(parent,text=text,command=callback,relief="flat",
                          borderwidth=1,highlightthickness=0,
@@ -287,12 +386,25 @@ class Packager(tk.Tk):
         """Any mod category can preview its source mesh and detected textures."""
         category=self.kind.get()
         selected=self.selected
-        self.preview_files=(
-            model_sources_from_folder(self.folder,category=category)
-            if self.folder else [
-                Path(path) for path in selected
-                if Path(path).suffix.lower()==(".lev" if category=="Track" else ".obj")
-            ])
+        if category=="Modpack":
+            idx=(self.pack_list.curselection()[0]
+                 if self.pack_list.curselection() else
+                 len(self.pack_mods)-1)
+            selected_mod=(self.pack_mods[idx] if 0<=idx<len(self.pack_mods)
+                          else None)
+            folder=(selected_mod["folder"] if selected_mod else None)
+            render_category=(selected_mod["category"] if selected_mod else "")
+            self.preview_files=(model_sources_from_folder(
+                folder,category=render_category) if folder else [])
+            texture_folder=folder
+        else:
+            self.preview_files=(
+                model_sources_from_folder(self.folder,category=category)
+                if self.folder else [
+                    Path(path) for path in selected
+                    if Path(path).suffix.lower()==(".lev" if category=="Track" else ".obj")
+                ])
+            texture_folder=self.folder
         self.model_choices.configure(
             values=[path.name for path in self.preview_files])
         if self.preview_files:
@@ -303,7 +415,7 @@ class Packager(tk.Tk):
             self.viewer.scene=None
             self.viewer.image.configure(image="",text="Choose a model to preview.")
             self.viewer.detail.set("No previewable model chosen yet.")
-        paths=(texture_sources_from_folder(self.folder) if self.folder
+        paths=(texture_sources_from_folder(texture_folder) if texture_folder
                else [Path(file) for file in selected
                     if Path(file).suffix.lower() in (
                         ".png",".bmp",".jpg",".jpeg",".tga")])
@@ -314,27 +426,48 @@ class Packager(tk.Tk):
         name=self.preview_selected.get()
         source=next((p for p in self.preview_files if p.name==name),
                     self.preview_files[0])
-        self.viewer.load(source,category=self.kind.get())
+        category=self.kind.get()
+        if category=="Modpack":
+            idx=(self.pack_list.curselection()[0]
+                 if self.pack_list.curselection() else
+                 len(self.pack_mods)-1)
+            if 0<=idx<len(self.pack_mods):
+                category=self.pack_mods[idx]["category"]
+        self.viewer.load(source,category=category)
 
     def export(self):
         title=self.title_var.get().strip()
-        name=engine.folder_name(title or "untitled_mod")+".zip"
+        multi=self.kind.get()=="Modpack"
+        name=(engine.folder_name(title or "untitled_mod")+
+              ("_modpack.zip" if multi else ".zip"))
         target=filedialog.asksaveasfilename(
             parent=self,title="Export Crash Forge native mod",
             defaultextension=".zip",initialfile=name,
             filetypes=[("ZIP archive","*.zip")])
         if not target:return
         try:
-            result=engine.build_mod_zip(
-                title=title,kind=self.kind.get(),
-                author=self.author.get(),version=self.version.get(),
-                description=self.description.get("1.0","end-1c"),
-                source_folder=self.folder,selected_files=self.selected,output=target)
-            self.status.set("ZIP READY • "+str(result["file_count"])+
-                " assets • "+f'{result["size"]/1048576:.2f} MiB'+
+            if multi:
+                result=bundles.build_modpack_zip(
+                    title=title,author=self.author.get(),
+                    version=self.version.get(),
+                    description=self.description.get("1.0","end-1c"),
+                    source_folders=[mod["folder"] for mod in self.pack_mods],
+                    output=target)
+                label=f'{result["component_count"]} independent mods'
+            else:
+                result=engine.build_mod_zip(
+                    title=title,kind=self.kind.get(),
+                    author=self.author.get(),version=self.version.get(),
+                    description=self.description.get("1.0","end-1c"),
+                    source_folder=self.folder,selected_files=self.selected,output=target)
+                label=f'{result["file_count"]} assets'
+            self.status.set("ZIP READY • "+label+
+                " • "+f'{result["size"]/1048576:.2f} MiB'+
                 " • SHA-256 "+result["sha256"][:16]+"...")
             messagebox.showinfo("Crash Forge: Mod Packager",
                 "Validated ZIP saved:\n"+result["path"]+
+                ("\n\nEach bundled mod retains its own INI and appears "
+                 "separately in the game." if multi else "")+
                 "\n\nOpen Forge Hub Creator Studio to submit it for review."+
                 "\nForge Hub will assign the permanent web ID.",parent=self)
         except (engine.PackageError,OSError,ValueError,zipfile.BadZipFile) as e:
