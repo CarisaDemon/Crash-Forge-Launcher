@@ -734,6 +734,48 @@ class ForgeLiveMixin:
                                          time_remaining="Verified SHA-256")
                 if self.hub_overlay.winfo_ismapped():
                     self._render_hub_cards()
+            elif event == "mod_uninstall_ok":
+                result, removed_game_path = data
+                self.mod_download_busy = False
+                # Remove only receipts for the same explicitly selected
+                # installation, never state belonging to another game.
+                changed = False
+                for removed_id in result["removed_ids"]:
+                    receipt = self.installed_mods_record.get(removed_id)
+                    if (isinstance(receipt, dict) and
+                            os.path.normcase(str(receipt.get("game_path",""))) ==
+                            os.path.normcase(str(removed_game_path))):
+                        del self.installed_mods_record[removed_id]
+                        changed = True
+                if changed:
+                    try:
+                        self._save_installed_mods_record()
+                    except OSError as error:
+                        self.hub_status_label.configure(
+                            text="Mod removed, but receipt cleanup failed: " + str(error)[:110])
+                self.set_download_status(
+                    percent=100,state="MOD UNINSTALLED",
+                    filename=result["title"],
+                    amount=str(result["removed_count"])+" folder(s) moved to Recycle Bin",
+                    time_remaining="Restart game to refresh mods")
+                self.hub_status_label.configure(
+                    text=result["title"]+
+                         " uninstalled locally. It is still available on Forge Hub.")
+                if self.hub_overlay.winfo_ismapped():
+                    self._close_mod_details()
+                    self._render_hub_cards()
+            elif event == "mod_uninstall_error":
+                title, detail = data
+                self.mod_download_busy = False
+                self.set_download_status(
+                    percent=100,state="UNINSTALL FAILED",
+                    filename=title,
+                    amount="No other mods or game files were targeted",
+                    time_remaining="See Forge Hub")
+                self.hub_status_label.configure(
+                    text=("Uninstall stopped: "+detail)[:170])
+                if self.hub_overlay.winfo_ismapped():
+                    self._render_hub_cards()
             elif event == "mod_error":
                 self.mod_download_busy = False
                 game_installed = services.real_game_status(self.game_install_path)["installed"]
