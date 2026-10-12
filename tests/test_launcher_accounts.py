@@ -167,6 +167,20 @@ class AccountClientTests(unittest.TestCase):
         self.assertEqual(result["username"],"modder_name")
         self.assertEqual(calls[-1][1]["user_id"],UUID)
 
+    def test_desktop_logout_keeps_browser_and_packager_sessions(self):
+        client=self.make()
+        client._save_session(SESSION)
+        seen=[]
+        def fake_request(url,payload=None,*,token=None,method="POST"):
+            seen.append((url,token,method))
+            return {}
+        client._request=fake_request
+        client.sign_out()
+        self.assertFalse(client.signed_in)
+        self.assertEqual(seen,[(
+            auth.SUPABASE+"/auth/v1/logout?scope=local",
+            SESSION["access_token"],"POST")])
+
     @unittest.skipUnless(os.name=="nt","DPAPI is Windows-only")
     def test_session_is_encrypted_at_rest_and_can_be_restored(self):
         with tempfile.TemporaryDirectory() as path:
