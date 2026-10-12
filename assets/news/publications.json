@@ -3,6 +3,20 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.52",
+      "title": "Modpacks, Uninstall & Modular Editors",
+      "date": "2026-10-11",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.52",
+      "notes": [
+        "Install, disable and safely uninstall Forge Hub mods with confirmation and the Windows Recycle Bin.",
+        "Build Modpacks with 2-60 independent characters, karts, wheels or tracks; each stays separately identified in game.",
+        "Model Importer loads, edits and saves linked character/kart/wheels INIs with backups and preserves unrelated settings.",
+        "New character packages use modular_body=true and omit the legacy has_wheels property.",
+        "Creator Studio and launcher use compatible Modpack ZIPs, independent web IDs and existing account login.",
+        "Original Crash Forge launcher background (Fondo.png) is the release illustration."
+      ]
+    },
+    {
       "version": "0.3.51",
       "title": "Resizable Editor Workspaces",
       "date": "2026-10-11",
