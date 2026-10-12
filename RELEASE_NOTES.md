@@ -1,4 +1,4 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.52/forge-news-v0.3.52.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.53/forge-news-v0.3.53.webp)
 
 # Crash Forge: Racing Launcher v0.3.53 — Global Game Status
 
