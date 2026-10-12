@@ -9,12 +9,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import time
 from pathlib import Path
 import struct
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk, ImageDraw
-from forge_preview_rasterizer import render_scene
+from forge_preview_rasterizer import render_scene, MAX_WIDTH, MAX_HEIGHT
+from forge_preview_fast import render_fast
+from forge_preview_gpu import GpuPreviewRenderer
+from forge_preview_exhaust_fx import paint_exhaust_effects
+from forge_preview_retail_fx import frame_index, paint_retail_smoke
+from forge_preview_ctr_particle import NATIVE_TICKS_PER_SECOND
+from forge_preview_overlay import paint_offset_markers, project_offset_markers
 
 MAX_SOURCE_SIZE = 70 * 1024 * 1024
 MAX_VERTICES = 150000
@@ -211,6 +218,21 @@ class PreviewPane(ttk.Frame):
         self._preview_photo=None
         self._texture_images={}
         self.texture_override=None
+        self._base_image=None
+        self._base_signature=None
+        self.offset_markers=()
+        self.exhaust_markers=()
+        self.preview_fire=False
+        self.preview_smoke=False
+        self.preview_arrows=True
+        self._fx_job=None
+        self._fx_start=time.monotonic()
+        self._gpu_renderer=None
+        self._gpu_failed=False
+        self._hovered_name=None
+        self._idle_render_job=None
+        self._interactive_until=0.
+        self._detail_original=""
         self.category=category
         self.detail=tk.StringVar(value="Select an OBJ model or LEV track for preview.")
         # Resizable viewport; the outer PanedWindow sash controls its height.
@@ -223,9 +245,12 @@ class PreviewPane(ttk.Frame):
         self.image.pack(fill="both",expand=True,padx=3,pady=3)
         self.image.bind("<ButtonPress-1>",self._down)
         self.image.bind("<B1-Motion>",self._move)
+        self.image.bind("<ButtonRelease-1>",self._up)
+        self.image.bind("<Motion>",self._hover)
+        self.image.bind("<Leave>",self._clear_hover)
         self.image.bind("<MouseWheel>",self._wheel)
-        self.image.bind("<Button-4>",lambda e:self._zoom(1.12))
-        self.image.bind("<Button-5>",lambda e:self._zoom(1/1.12))
+        self.image.bind("<Button-4>",self._wheel_linux)
+        self.image.bind("<Button-5>",self._wheel_linux)
         self.image.bind("<Configure>",self._configure)
         controls=tk.Frame(self,bg="#121820")
         controls.pack(fill="x")
@@ -247,10 +272,14 @@ class PreviewPane(ttk.Frame):
             path=Path(path)
             parsed=load_ctr_lev(path) if path.suffix.lower()==".lev" else load_obj(path)
             self.scene=parsed
+            self._base_image=None
+            self._base_signature=None
             self.texture_override=Path(texture_override) if texture_override else None
             self._texture_images.clear()
             self._fit()
-            self.detail.set(parsed.kind+" • "+parsed.description)
+            self._detail_original=parsed.kind+" • "+parsed.description
+            self.detail.set(self._detail_original)
+            self._hovered_name=None
             self._schedule()
             return True
         except (OSError,ValueError,struct.error) as exc:
@@ -260,37 +289,155 @@ class PreviewPane(ttk.Frame):
             return False
     def set_variant(self,texture):
         self.texture_override=Path(texture) if texture else None
+        self._base_image=None
         self._schedule()
-    def _fit(self):
-        if not self.scene:return
-        vertices=self.scene.vertices
-        bounds=[(min(v[k] for v in vertices),max(v[k] for v in vertices)) for k in range(3)]
+    def set_markers(self, markers):
+        # Lightweight overlays: no need to reload OBJ, textures or triangles.
+        self.offset_markers=tuple(markers or ())
+        self._schedule()
+
+    def set_exhaust_preview(self, markers, *, fire=False, smoke=False,
+                            arrows=True):
+        self.exhaust_markers=tuple(markers or ())
+        self.preview_fire=bool(fire) and bool(self.exhaust_markers)
+        self.preview_smoke=bool(smoke) and bool(self.exhaust_markers)
+        self.preview_arrows=bool(arrows)
+        if self.preview_fire or self.preview_smoke:
+            if self._fx_job is None:
+                self._fx_start=time.monotonic()
+                self._fx_job=self.after(33,self._animate_effects)
+        elif self._fx_job is not None:
+            self.after_cancel(self._fx_job)
+            self._fx_job=None
+        self._schedule()
+
+    def _animate_effects(self):
+        self._fx_job=None
+        if not self.winfo_exists():
+            return
+        if self.scene and (self.preview_fire or self.preview_smoke):
+            # Repaint only the lightweight effect overlay while camera is idle.
+            self._schedule()
+        if self.preview_fire or self.preview_smoke:
+            self._fx_job=self.after(33,self._animate_effects)
+    def _set_frame_bounds(self, points, padding=1.0):
+        bounds=[(min(v[k] for v in points),max(v[k] for v in points))
+                for k in range(3)]
         self.center=tuple((a+b)*.5 for a,b in bounds)
-        self.normalizer=max((b-a for a,b in bounds),default=1) or 1.
+        self.normalizer=(max((b-a for a,b in bounds),default=1) or 1.)*padding
+    def _fit(self):
         self.reset()
     def reset(self):
+        if self.scene:
+            self._set_frame_bounds(self.scene.vertices)
         self.yaw=.7
         self.pitch=.45
         self.zoom=1
         self._schedule()
+    def frame_markers(self):
+        # An explicit view command so distant exhaust markers can be seen
+        # without making the model tiny by default.
+        if not self.scene:
+            return
+        points=list(self.scene.vertices)
+        points.extend(marker["position"] for marker in self.offset_markers)
+        exhaust=getattr(self,"exhaust_markers",())
+        if exhaust and (getattr(self,"preview_arrows",False) or
+                        getattr(self,"preview_fire",False) or
+                        getattr(self,"preview_smoke",False)):
+            points.extend(marker["position"] for marker in exhaust)
+        self._set_frame_bounds(points,padding=1.18)
+        self.zoom=.82
+        self._schedule()
     def _down(self,e):
         self._drag=(e.x,e.y)
+        self._interactive_until=time.monotonic()+.25
+        self._cancel_idle_render()
+
     def _move(self,e):
-        if self._drag is None:return
-        dx=e.x-self._drag[0]
-        dy=e.y-self._drag[1]
+        if self._drag is None:
+            return
+        dx,dy=e.x-self._drag[0],e.y-self._drag[1]
+        if dx==0 and dy==0:
+            return
         self._drag=(e.x,e.y)
         self.yaw+=dx*.012
         self.pitch=max(-1.45,min(1.45,self.pitch+dy*.012))
+        self._interactive_until=time.monotonic()+.18
         self._schedule()
+
+    def _up(self,e=None):
+        self._drag=None
+        self._interactive_until=time.monotonic()+.10
+        self._request_idle_render()
+
+    def _cancel_idle_render(self):
+        if self._idle_render_job is not None:
+            self.after_cancel(self._idle_render_job)
+            self._idle_render_job=None
+
+    def _request_idle_render(self):
+        self._cancel_idle_render()
+        self._idle_render_job=self.after(190,self._settle)
+
+    def _settle(self):
+        self._idle_render_job=None
+        if self.scene and self.winfo_exists() and self._drag is None:
+            self._interactive_until=0.
+            self._schedule()
+
     def _zoom(self,factor):
         self.zoom=max(.23,min(6,self.zoom*factor))
+        self._interactive_until=time.monotonic()+.20
         self._schedule()
+        self._request_idle_render()
+
     def _wheel(self,e):
-        self._zoom(1.1 if e.delta>0 else 1/1.1)
+        if getattr(e,"delta",0):
+            self._zoom(1.1 if e.delta>0 else 1/1.1)
+        # Do not bubble the zoom wheel into the parent's page-scroller.
+        return "break"
+
+    def _wheel_linux(self,e):
+        self._zoom(1.12 if e.num==4 else 1/1.12)
+        return "break"
+
+    def _hover(self,e):
+        if self.scene is None or not self.offset_markers:
+            return
+        projected=project_offset_markers(
+            self.offset_markers,max(120,self.width),max(95,self.height),
+            yaw=self.yaw,pitch=self.pitch,zoom=self.zoom,
+            center=self.center,normalizer=self.normalizer)
+        nearby=[(math.hypot(e.x-m["screen"][0],e.y-m["screen"][1]),m)
+                for m in projected if m["visible"]]
+        nearest=min(nearby,key=lambda row:row[0]) if nearby else None
+        mark=nearest[1] if nearest and nearest[0]<16 else None
+        name=mark.get("name") if mark else None
+        if name==self._hovered_name:
+            return
+        self._hovered_name=name
+        if mark is None:
+            self.detail.set(self._detail_original)
+        else:
+            values=mark.get("values",(0,0,0))
+            txt=(str(name)+"   X: "+f"{values[0]:g}"+
+                 "   Y: "+f"{values[1]:g}"+"   Z: "+f"{values[2]:g}")
+            rotation=mark.get("rotation")
+            if rotation is not None:
+                txt+="   Rotation: "+", ".join(f"{v:g}" for v in rotation)
+            self.detail.set(txt)
+        self._schedule()
+
+    def _clear_hover(self,e=None):
+        if self._hovered_name is not None:
+            self._hovered_name=None
+            self.detail.set(self._detail_original)
+            self._schedule()
+
     def _schedule(self):
         if self._scheduled is None and self.scene:
-            self._scheduled=self.after(45,self._paint)
+            self._scheduled=self.after(12,self._paint)
     def _source_texture(self,material):
         if self.texture_override and self.texture_override.is_file():
             return self.texture_override
@@ -315,13 +462,103 @@ class PreviewPane(ttk.Frame):
         # Correct per-pixel UV atlas mapping, z-buffer and vertex colors.
         # Renderer is independent of Tk so all four native editor categories
         # share it and its output can be regression-tested without opening GUI.
-        image = render_scene(
-            self.scene, max(120, self.width),
-            max(95, self.height),
-            yaw=self.yaw, pitch=self.pitch, zoom=self.zoom,
-            center=self.center, normalizer=self.normalizer,
-            texture_loader=self._texture, texture_override=self.texture_override,
-            category=self.category)
+        width,height=max(120,self.width),max(95,self.height)
+        camera=(self.yaw,self.pitch,self.zoom,self.center,self.normalizer)
+        interactive=(self._drag is not None or
+                     time.monotonic()<self._interactive_until)
+        # Hardware rendering retains the same full-resolution UV texture,
+        # z-buffer and model fidelity while rotating and at rest.
+        if not self._gpu_failed and self._gpu_renderer is None:
+            try:
+                self._gpu_renderer=GpuPreviewRenderer()
+            except Exception:
+                self._gpu_failed=True
+        quality=("gpu" if self._gpu_renderer is not None
+                 else ("fast" if interactive else "full"))
+        elapsed=time.monotonic()-self._fx_start
+        native_fire=bool(self.preview_fire and self.exhaust_markers)
+        native_smoke=bool(self.preview_smoke and self.exhaust_markers)
+        mount_key=tuple((tuple(m.get("position",(0,0,0))),
+                         tuple(m.get("rotation") or (0,0,0)))
+                        for m in self.exhaust_markers[:2]) if native_fire else ()
+        signature=(id(self.scene),width,height,camera,str(self.texture_override),
+                   self.category,quality,frame_index(elapsed) if native_fire else -1,
+                   mount_key,
+                   int(elapsed*NATIVE_TICKS_PER_SECOND) if native_smoke else -1,
+                   tuple((tuple(m["position"]),tuple(m.get("rotation") or ()))
+                         for m in self.exhaust_markers) if native_smoke else ())
+        if self._base_image is None or self._base_signature != signature:
+            # Both paths preserve camera aspect and exact anchor projection.
+            try:
+                if self._gpu_renderer is None:
+                    raise RuntimeError("GPU unavailable")
+                # Use true viewport resolution on normal desktop windows.
+                # For unusually large panels, downscale *uniformly* so a
+                # 16:9 or 4:3 OBJ never becomes flattened by the resize.
+                gpu_factor=min(1.0,2560/width,1440/height)
+                small_w=max(100,round(width*gpu_factor))
+                small_h=max(88,round(height*gpu_factor))
+                image=self._gpu_renderer.render(
+                    self.scene,small_w,small_h,yaw=self.yaw,pitch=self.pitch,
+                    zoom=self.zoom,center=self.center,normalizer=self.normalizer,
+                    texture_loader=self._texture,
+                    texture_override=self.texture_override,
+                    category=self.category,
+                    fx_exhausts=self.exhaust_markers if native_fire else (),
+                    fx_smoke_exhausts=self.exhaust_markers if native_smoke else (),
+                    fx_time=elapsed)
+            except Exception:
+                # Retain the reliable original CPU path on older/no-GL PCs.
+                self._gpu_failed=True
+                if self._gpu_renderer is not None:
+                    try:self._gpu_renderer.release()
+                    except Exception:pass
+                self._gpu_renderer=None
+                quality="fast" if interactive else "full"
+                signature=(id(self.scene),width,height,camera,
+                           str(self.texture_override),self.category,quality)
+                factor=min(.72 if interactive else 1.,
+                           (900 if interactive else MAX_WIDTH)/width,
+                           (520 if interactive else MAX_HEIGHT)/height)
+                small_w=max(100,round(width*factor))
+                small_h=max(88,round(height*factor))
+                renderer=render_fast if interactive else render_scene
+                image=renderer(
+                    self.scene,small_w,small_h,
+                    yaw=self.yaw,pitch=self.pitch,zoom=self.zoom,
+                    center=self.center,normalizer=self.normalizer,
+                    texture_loader=self._texture,
+                    texture_override=self.texture_override,
+                    category=self.category,
+                    **({} if interactive else {"draw_header":False}))
+            if image.size!=(width,height):
+                image=image.resize((width,height),Image.Resampling.BILINEAR)
+            self._base_image=image
+            self._base_signature=signature
+        image=paint_offset_markers(
+            self._base_image,self.offset_markers,yaw=self.yaw,pitch=self.pitch,
+            zoom=self.zoom,center=self.center,normalizer=self.normalizer,
+            hovered=self._hovered_name,draw_rotation=not bool(self.exhaust_markers))
+        if self.preview_smoke and self._gpu_renderer is None:
+            image=paint_retail_smoke(
+                image,self.exhaust_markers,
+                yaw=self.yaw,pitch=self.pitch,zoom=self.zoom,
+                center=self.center,normalizer=self.normalizer,
+                time_s=elapsed)
+        # Only the CPU fallback draws approximate fire; OpenGL displays the
+        # eight original CTR turbo meshes at their full retail max size.
+        image=paint_exhaust_effects(
+            image,self.exhaust_markers,yaw=self.yaw,pitch=self.pitch,
+            zoom=self.zoom,center=self.center,normalizer=self.normalizer,
+            time_s=elapsed,
+            fire=self.preview_fire and self._gpu_renderer is None,
+            smoke=False,show_arrows=self.preview_arrows)
+        draw=ImageDraw.Draw(image)
+        draw.text((10,8),self.category.upper()+"  /  "+
+                  self.scene.kind+"  /  "+(
+                      "GPU TEXTURED" if self._gpu_renderer is not None
+                      else ("FAST ORBIT (CPU)" if interactive else "TEXTURED (CPU)")),
+                  fill=(255,161,85))
         self._preview_photo=ImageTk.PhotoImage(image)
         self.image.configure(image=self._preview_photo,text="")
 
