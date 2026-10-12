@@ -14,6 +14,11 @@ from forge_editor_config import (find_game_installation, selected_game_directory
 from forge_editor_geometry import initial_geometry
 from forge_editor_layout import WindowLayoutMemory
 from forge_model_preview import PreviewPane, TextureGallery, texture_sources_from_folder
+from forge_offset_guides import (build_offset_markers, read_kart_offset_values,
+                                DEFAULT_MOUNT_UNITS_PER_OBJ)
+from forge_model_ini_link import (
+    find_linked_ini, read_linked_ini, save_linked_ini,
+    LinkedIniError, LinkedIniConflict)
 from crash_forge_kart_colors import install_colors, scan_palette, KartColorError
 from crash_forge_model_imports import import_mod, ImportErrorMod
 from crash_forge_native_tracks import install_native_track, inspect_native_track, NativeTrackError, slugify as track_slugify
@@ -149,6 +154,14 @@ class App(tk.Tk):
         self.configure(bg=BG)
         self.active_section = "home"
         self.mod_obj_var = tk.StringVar()
+        # Current OBJ <-> same-folder native INI. Editing the form NEVER
+        # writes to disk until the explicit Save INI button is pressed.
+        self._linked_ini = None
+        self._linked_ini_context = None
+        self._ini_loading = False
+        self._ini_modified = False
+        self.linked_ini_status_var = tk.StringVar(
+            value="Open an OBJ to detect character.ini, kart.ini or wheels.ini")
         self.mod_name_var = tk.StringVar(value="My Custom Model")
         self.mod_id_var = tk.StringVar(value="my_custom_mod")
         self.mod_scale_var = tk.StringVar(value="1.0")
@@ -156,6 +169,17 @@ class App(tk.Tk):
         self.mod_mounts = {key: tk.StringVar(value="0.0") for key in
                            ["seat_x", "seat_y", "seat_z"] +
                            ["wheel_" + wheel + "_" + axis for wheel in ("fl","fr","rl","rr") for axis in "xyz"]}
+        self.mod_exhaust_count_var = tk.StringVar(value="Default")
+        self.mod_exhausts = {
+            f"exhaust_{n}_{suffix}{axis}": tk.StringVar(value="0.0")
+            for n in range(4) for suffix in ("", "rotation_") for axis in "xyz"}
+        self.preview_offsets_visible_var = tk.BooleanVar(value=True)
+        self.preview_offset_group_var = tk.StringVar(value="All")
+        self.preview_fire_var = tk.BooleanVar(value=False)
+        self.preview_smoke_var = tk.BooleanVar(value=False)
+        self.preview_arrows_var = tk.BooleanVar(value=True)
+        self.preview_offset_units_var = tk.StringVar(
+            value=str(DEFAULT_MOUNT_UNITS_PER_OBJ))
         self.obj_var = tk.StringVar()
         self.name_var = tk.StringVar(value="My Character")
         self.slug_var = tk.StringVar(value="my_character")
@@ -179,7 +203,6 @@ class App(tk.Tk):
         self.track_description_var = tk.StringVar()
         self.track_info_var = tk.StringVar(
             value="LEV + VRM only. Import is staged; does not replace Crash Cove or start the game.")
-        self.own_wheels_var = tk.BooleanVar(value=True)
         self.icon_mode_var = tk.StringVar(value="retail")
         self.retail_icon_var = tk.StringVar(value="coco")
         self.custom_icon_var = tk.StringVar()
@@ -199,7 +222,27 @@ class App(tk.Tk):
         self._set_windows_identity()
         self._setup_style()
         self._build_ui()
+        self._install_mousewheel_router()
         self.game_var.trace_add("write", self._on_game_path_change)
+        self.mod_exhaust_count_var.trace_add("write", self._refresh_exhaust_controls)
+        for value in (self.mod_scale_var, self.scale_var, self.ox_var, self.oy_var,
+                      self.oz_var, *self.mod_offsets.values(), *self.mod_mounts.values(),
+                      *self.mod_exhausts.values(), self.preview_offsets_visible_var,
+                      self.preview_offset_group_var, self.preview_offset_units_var,
+                      self.preview_fire_var,self.preview_smoke_var,
+                      self.preview_arrows_var):
+            value.trace_add("write", self._refresh_offset_guides)
+        self._refresh_exhaust_controls()
+        tracked=(self.name_var,self.slug_var,self.fallback_var,self.engine_var,
+                 self.kart_var,self.scale_var,self.ox_var,self.oy_var,self.oz_var,
+                 self.icon_mode_var,self.retail_icon_var,
+                 self.custom_icon_var,self.mod_name_var,self.mod_id_var,
+                 self.mod_scale_var,self.mod_exhaust_count_var,
+                 *self.mod_offsets.values(),*self.mod_mounts.values(),
+                 *self.mod_exhausts.values())
+        for value in tracked:
+            value.trace_add("write",self._update_ini_dirty)
+        self.bind("<Control-s>",self._save_ini_shortcut)
         for value in (self.obj_var, self.mod_obj_var, self.track_lev_var):
             value.trace_add("write", self._schedule_model_preview)
         self._sync_output_path()
@@ -448,7 +491,9 @@ class App(tk.Tk):
                       fill="x", anchor="w", pady=(4, 0))
         self.kart_colors_gallery=TextureGallery(
             palette,editable=True,on_preview=self._preview_texture)
-        self.kart_colors_gallery.pack(fill="x",pady=(6,0))
+        # Hide the otherwise large empty texture gallery until a scan finds
+        # variants. This leaves more room for the model viewport on small UI.
+        self.kart_colors_gallery.pack_forget()
 
         columns = ttk.Frame(root)
         columns.pack(fill="both", expand=True)
@@ -490,8 +535,6 @@ class App(tk.Tk):
         self._field(transform_fields, "Offset X", self.ox_var, 1)
         self._field(transform_fields, "Offset Y", self.oy_var, 2)
         self._field(transform_fields, "Offset Z", self.oz_var, 3)
-        ttk.Checkbutton(transform_fields, text="OBJ includes its own wheels  (has_wheels = false)",
-                        variable=self.own_wheels_var).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         output_border, output = self._card(left)
         output_border.pack(fill="x")
@@ -590,6 +633,38 @@ class App(tk.Tk):
         mount_fields.pack(fill="x")
         for i, (key,var) in enumerate(self.mod_mounts.items()):
             self._field(mount_fields, key.replace("_"," ").title(), var, i)
+        # The game accepts up to four exhaust outlets with separate XYZ and
+        # orientation. Default retains retail exhaust behavior in existing karts.
+        exhaust_row=ttk.Frame(self.mount_frame,style="Panel.TFrame")
+        exhaust_row.pack(fill="x",pady=(13,5))
+        ttk.Label(exhaust_row,text="EXHAUST OUTLETS",style="Section.TLabel").pack(side="left")
+        ttk.Label(exhaust_row,text="Count",style="Panel.TLabel").pack(side="left",padx=(18,6))
+        self.exhaust_count_box=ttk.Combobox(
+            exhaust_row,textvariable=self.mod_exhaust_count_var,
+            values=("Default","0","1","2","3","4"),state="readonly",width=10)
+        self.exhaust_count_box.pack(side="left")
+        self.exhaust_guide_frames=[]
+        for n in range(4):
+            panel=ttk.Frame(self.mount_frame,style="Panel.TFrame")
+            ttk.Label(panel,text=f"EXHAUST {n+1}  /  POSITION & DIRECTION",
+                      style="Section.TLabel").pack(anchor="w",pady=(4,3))
+            pairs=ttk.Frame(panel,style="Panel.TFrame")
+            pairs.pack(fill="x")
+            for column,prefix,title in ((0,"","Position"),(1,"rotation_","Rotation")):
+                group=ttk.Frame(pairs,style="Panel.TFrame")
+                group.grid(row=0,column=column,sticky="nsew",
+                           padx=(0,9) if column==0 else (9,0))
+                ttk.Label(group,text=title+" XYZ",style="Muted.TLabel").pack(anchor="w")
+                fields=ttk.Frame(group,style="Panel.TFrame")
+                fields.pack(fill="x")
+                for k,axis in enumerate("xyz"):
+                    key=f"exhaust_{n}_{prefix}{axis}"
+                    self._field(fields,axis.upper(),self.mod_exhausts[key],k)
+            pairs.columnconfigure(0,weight=1)
+            pairs.columnconfigure(1,weight=1)
+            self.exhaust_guide_frames.append(panel)
+        ttk.Label(self.mount_frame,text="Set exhaust count to show its markers and rotation arrows.",
+                  style="Muted.TLabel").pack(anchor="w",pady=(3,0))
         # Texture variants live in ONE kart-only section (see palette_card).
         # Do not duplicate the same color folder picker under Import Model.
         ttk.Label(model, text="Use the game installation selected in the Character page.",
@@ -600,6 +675,47 @@ class App(tk.Tk):
         self.preview_card.pack(fill="x",pady=(0,12))
         self._section_title(visual,"LIVE 3D PREVIEW",
             "Drag the orange separator to resize the textured model and the thumbnails.")
+        config_row=ttk.Frame(visual,style="Panel.TFrame")
+        config_row.pack(fill="x",pady=(3,7))
+        ttk.Label(config_row,textvariable=self.linked_ini_status_var,
+                  style="Muted.TLabel",wraplength=590,justify="left").pack(
+                      side="left",fill="x",expand=True,padx=(0,8))
+        self.reload_linked_ini_button=ttk.Button(
+            config_row,text="Reload INI",command=self._reload_linked_ini,
+            style="Ghost.TButton",state="disabled")
+        self.reload_linked_ini_button.pack(side="right",padx=(5,0))
+        self.save_linked_ini_button=ttk.Button(
+            config_row,text="Save INI",command=self._save_linked_ini,
+            style="Accent.TButton",state="disabled")
+        self.save_linked_ini_button.pack(side="right",padx=(5,0))
+        guide_row=ttk.Frame(visual,style="Panel.TFrame")
+        guide_row.pack(fill="x",pady=(2,5))
+        ttk.Checkbutton(guide_row,text="Show offsets",
+                        variable=self.preview_offsets_visible_var).pack(side="left")
+        ttk.Label(guide_row,text="Markers:",style="Muted.TLabel").pack(
+            side="left",padx=(12,3))
+        ttk.Combobox(guide_row,textvariable=self.preview_offset_group_var,
+                     values=("All","Model","Seat","Wheels","Exhaust"),
+                     state="readonly",width=9).pack(side="left")
+        ttk.Label(guide_row,text="Native scale: 248.05 CTR / OBJ",
+                  style="Muted.TLabel").pack(side="left",padx=(14,4))
+        fx_row=ttk.Frame(visual,style="Panel.TFrame")
+        fx_row.pack(fill="x",pady=(2,4))
+        ttk.Label(fx_row,text="EXHAUST PREVIEW",style="Section.TLabel").pack(
+            side="left",padx=(0,12))
+        ttk.Checkbutton(fx_row,text="Fire",variable=self.preview_fire_var).pack(
+            side="left",padx=(0,12))
+        ttk.Checkbutton(fx_row,text="Smoke",variable=self.preview_smoke_var).pack(
+            side="left",padx=(0,12))
+        ttk.Checkbutton(fx_row,text="Direction arrows",
+                        variable=self.preview_arrows_var).pack(side="left")
+        ttk.Label(visual,text="CTR turbo: 8 original flame-core frames at maximum size. "
+                  "Broken translucent sheet layers hidden in this QA preview. "
+                  "Smoke: dustpuff00 with soft transparent edges and native 30Hz motion.",
+                  style="Muted.TLabel",wraplength=900).pack(fill="x")
+        ttk.Button(visual,text="FRAME OFFSETS",style="Ghost.TButton",
+                   command=lambda:self.model_viewer.frame_markers()).pack(
+                       anchor="e",pady=(3,1))
         self.preview_split = tk.PanedWindow(
             visual,orient="vertical",bg=ACCENT,bd=0,relief="flat",
             sashwidth=10,sashrelief="flat",showhandle=True,handlesize=13,
@@ -775,11 +891,269 @@ class App(tk.Tk):
             else:
                 self.mount_frame.pack_forget()
                 self.preview_card.pack(fill="x",pady=(0,12),after=self.mod_card)
+        self._sync_preview_panes(section)
         self._refresh_current_preview()
         if section != "home" and hasattr(self,"layout"):
             self.after(80,self.layout.restore_panes)
         self.scroll_canvas.yview_moveto(0)
         self._on_content_configure()
+
+
+    @staticmethod
+    def _model_from_kart_folder(folder):
+        folder=Path(folder)
+        models=sorted(folder.glob("*.obj"),key=lambda p:p.name.casefold())
+        if not models:
+            return None
+        ini=folder/"kart.ini"
+        if ini.is_file():
+            try:
+                preferred=read_linked_ini("kart",ini).fields.get("asset_name","")
+                for model in models:
+                    if model.stem.casefold()==preferred.casefold():
+                        return model
+            except (OSError,LinkedIniError):
+                pass
+        return models[0]
+
+    def _ini_values(self):
+        kind=self.active_section
+        if kind=="character":
+            icon=("retail:"+self.retail_icon_var.get()
+                  if self.icon_mode_var.get()=="retail" else
+                  self.custom_icon_var.get().strip())
+            return {
+                "name":self.name_var.get(),
+                "asset_name":self.slug_var.get(),
+                "fallback_retail":self.fallback_var.get(),
+                "engine":self.engine_var.get(),
+                "kart":self.kart_var.get(),
+                "modular_body":(
+                    self._linked_ini.fields.get("modular_body","true")
+                    if self._linked_ini is not None and
+                       self._linked_ini.kind=="character" else "true"),
+                "icon":icon,
+                "scale":self.scale_var.get(),
+                **{"offset_"+a:v.get() for a,v in
+                   zip("xyz",(self.ox_var,self.oy_var,self.oz_var))},
+            }
+        return {
+            "name":self.mod_name_var.get(),
+            "asset_name":self.mod_id_var.get(),
+            "scale":self.mod_scale_var.get(),
+            **{"offset_"+a:v.get() for a,v in self.mod_offsets.items()},
+            **({**{a:v.get() for a,v in self.mod_mounts.items()},
+               **{a:v.get() for a,v in self.mod_exhausts.items()},
+               "exhaust_count":self.mod_exhaust_count_var.get()}
+               if kind=="kart" else {}),
+        }
+
+    def _update_ini_dirty(self,*_):
+        if self._ini_loading or not hasattr(self,"save_linked_ini_button"):
+            return
+        link=self._linked_ini
+        if link is None or link.kind!=self.active_section:
+            self.save_linked_ini_button.configure(state="disabled")
+            self._ini_modified=False
+            return
+        edited=self._ini_values()
+        dirty=any(str(edited.get(k,"")).strip()!=v for k,v in link.fields.items())
+        self._ini_modified=dirty
+        self.save_linked_ini_button.configure(state="normal" if dirty else "disabled")
+        self.linked_ini_status_var.set(
+            ("Unsaved changes | " if dirty else "Loaded | ")+
+            link.path.name+"  (Save INI updates this file only)")
+
+    def _apply_ini_fields(self,kind,values,obj):
+        # All offsets are reset when a new OBJ is selected. Neutral scale is
+        # 1.0 instead of 0.0: zero scale is invalid and hides every marker.
+        self._ini_loading=True
+        try:
+            if kind=="character":
+                self.name_var.set(values.get("name",obj.stem))
+                self.slug_var.set(values.get("asset_name",clean_slug(obj.stem)))
+                self.fallback_var.set(values.get("fallback_retail","coco"))
+                self.engine_var.set(values.get("engine","accel"))
+                self.kart_var.set(values.get("kart",""))
+                self.scale_var.set(values.get("scale","1.0"))
+                for axis,var in zip("xyz",(self.ox_var,self.oy_var,self.oz_var)):
+                    var.set(values.get("offset_"+axis,"0.0"))
+                icon=values.get("icon","retail:coco").strip()
+                if icon.casefold().startswith("retail:"):
+                    self.icon_mode_var.set("retail")
+                    self.retail_icon_var.set(icon.split(":",1)[1])
+                    self.custom_icon_var.set("")
+                else:
+                    self.icon_mode_var.set("custom")
+                    self.custom_icon_var.set(icon)
+                self._update_icon_controls()
+            else:
+                self.mod_name_var.set(values.get("name",obj.stem))
+                self.mod_id_var.set(values.get("asset_name",clean_slug(obj.stem)))
+                self.mod_scale_var.set(values.get("scale","1.0"))
+                for axis,var in self.mod_offsets.items():
+                    var.set(values.get("offset_"+axis,"0.0"))
+                for key,var in self.mod_mounts.items():
+                    var.set(values.get(key,"0.0"))
+                for key,var in self.mod_exhausts.items():
+                    var.set(values.get(key,"0.0"))
+                self.mod_exhaust_count_var.set(
+                    values.get("exhaust_count","0"))
+        finally:
+            self._ini_loading=False
+        self._refresh_offset_guides()
+
+    def _bind_source_ini(self,source,kind,force=False):
+        if kind not in ("character","kart","wheels"):
+            return
+        obj=Path(source).resolve()
+        context=(kind,str(obj))
+        if not force and self._linked_ini_context==context:
+            return
+        self._linked_ini_context=context
+        self._linked_ini=None
+        self._ini_modified=False
+        values={}
+        found=find_linked_ini(obj,kind)
+        try:
+            if found and found[0]==kind:
+                self._linked_ini=read_linked_ini(*found)
+                values=self._linked_ini.fields
+                status="Loaded | "+self._linked_ini.path.name
+            elif found:
+                status=("Found "+found[1].name+
+                        " | switch to the "+found[0].title()+" importer")
+            else:
+                status=("No matching INI | offsets 0.0, scale 1.0 "
+                        "(neutral) — Import Model can create a new mod")
+        except (OSError,LinkedIniError) as exc:
+            status="Could not read linked INI: "+str(exc)
+        self._apply_ini_fields(kind,values,obj)
+        self.linked_ini_status_var.set(status)
+        self.reload_linked_ini_button.configure(
+            state="normal" if self._linked_ini else "disabled")
+        self.save_linked_ini_button.configure(state="disabled")
+
+    def _reload_linked_ini(self):
+        if self._linked_ini is None:
+            return
+        if self._ini_modified and not messagebox.askyesno(
+            APP_TITLE,"Discard unsaved INI changes and reload from disk?"):
+            return
+        source=(self.obj_var.get() if self.active_section=="character"
+                else self.mod_obj_var.get())
+        if (not source and self.active_section=="kart" and
+                self.kart_mod_dir_var.get().strip()):
+            model=self._model_from_kart_folder(
+                self.kart_mod_dir_var.get().strip())
+            if model:source=str(model)
+        if source:
+            self._bind_source_ini(source,self.active_section,force=True)
+        self.status_var.set("INI reloaded from disk")
+
+    def _save_shortcut_available(self):
+        return self._linked_ini is not None and self._linked_ini.kind==self.active_section
+
+    def _save_ini_shortcut(self,_event=None):
+        if self._save_shortcut_available():
+            self._save_linked_ini()
+            return "break"
+        return None
+
+    def _save_linked_ini(self):
+        if not self._save_shortcut_available():
+            return
+        link=self._linked_ini
+        try:
+            backup=save_linked_ini(link,self._ini_values())
+            if backup is not None:
+                self.status_var.set("INI saved — backup: "+backup.name)
+            else:
+                self.status_var.set("INI is already up to date")
+            self._linked_ini=read_linked_ini(link.kind,link.path)
+            self._ini_modified=False
+            self._update_ini_dirty()
+        except LinkedIniConflict as exc:
+            messagebox.showerror(APP_TITLE,
+                str(exc)+"\n\nNo data was overwritten. Use Reload INI to inspect the changes.")
+            self.status_var.set("INI changed on disk — reload first")
+        except (OSError,LinkedIniError) as exc:
+            messagebox.showerror(APP_TITLE,"INI not saved: "+str(exc))
+            self.status_var.set("INI save failed")
+
+    def _refresh_exhaust_controls(self, *_):
+        if not hasattr(self,"exhaust_guide_frames"):
+            return
+        try:
+            count=max(0,min(4,int(self.mod_exhaust_count_var.get())))
+        except (TypeError,ValueError):
+            count=0
+        for i,panel in enumerate(self.exhaust_guide_frames):
+            if i<count:
+                panel.pack(fill="x",pady=(7,5))
+            else:
+                panel.pack_forget()
+        self._refresh_offset_guides()
+
+    def _refresh_offset_guides(self, *_):
+        if not hasattr(self,"model_viewer") or self.active_section=="home":
+            return
+        section=self.active_section.title()
+        if section=="Tracks":
+            self.model_viewer.set_markers(())
+            self.model_viewer.set_exhaust_preview((),arrows=False)
+            return
+        if section=="Character":
+            offsets={a:v.get() for a,v in zip("xyz",(self.ox_var,self.oy_var,self.oz_var))}
+            scale=self.scale_var.get()
+            mounts={}
+        else:
+            offsets={a:v.get() for a,v in self.mod_offsets.items()}
+            scale=self.mod_scale_var.get()
+            mounts=({**{a:v.get() for a,v in self.mod_mounts.items()},
+                     **{a:v.get() for a,v in self.mod_exhausts.items()}}
+                    if section=="Kart" else {})
+        markers=build_offset_markers(
+            section,offsets,scale,mounts,
+            exhaust_count=self.mod_exhaust_count_var.get(),
+            units_per_obj=self.preview_offset_units_var.get(),
+            group=self.preview_offset_group_var.get())
+        self.model_viewer.set_markers(
+            markers if self.preview_offsets_visible_var.get() else ())
+        # Effects and arrows work regardless of which marker group is selected.
+        exhaust_markers=build_offset_markers(
+            "Kart",offsets,scale,mounts,
+            exhaust_count=self.mod_exhaust_count_var.get(),
+            units_per_obj=self.preview_offset_units_var.get(),group="Exhaust"
+        ) if section=="Kart" else ()
+        self.model_viewer.set_exhaust_preview(
+            exhaust_markers,fire=section=="Kart" and self.preview_fire_var.get(),
+            smoke=section=="Kart" and self.preview_smoke_var.get(),
+            arrows=section=="Kart" and self.preview_arrows_var.get())
+
+    def _load_selected_kart_offsets(self, ini_path):
+        try:
+            values=read_kart_offset_values(ini_path)
+        except (OSError,ValueError):
+            return
+        self.mod_scale_var.set(values["scale"])
+        for axis,value in values["model"].items():
+            self.mod_offsets[axis].set(value)
+        for key,var in self.mod_mounts.items():
+            var.set(values["mounts"].get(key,"0.0"))
+        for key,var in self.mod_exhausts.items():
+            var.set(values["mounts"].get(key,"0.0"))
+        self.mod_exhaust_count_var.set(values["exhaust_count"])
+
+    def _sync_preview_panes(self, section):
+        # Karts already have their own color gallery. Give the 3D view the
+        # full adjustable pane instead of wasting a second empty thumbnail area.
+        active = str(self._texture_preview_region) in {str(p) for p in self.preview_split.panes()}
+        if section == "kart" and active:
+            self.preview_split.forget(self._texture_preview_region)
+        elif section in ("character", "wheels", "tracks") and not active:
+            self.preview_split.add(self._texture_preview_region,
+                                   minsize=90, stretch="always")
 
     def _schedule_model_preview(self, *_):
         if self._preview_update_job is not None:
@@ -803,25 +1177,45 @@ class App(tk.Tk):
         else:
             source=self.mod_obj_var.get().strip()
             category=self.active_section.title()
-            if self.active_section=="kart" and self.kart_mod_dir_var.get().strip():
-                models=sorted(Path(self.kart_mod_dir_var.get().strip()).glob("*.obj"))
-                if models:source=str(models[0])
+            if (self.active_section=="kart" and
+                    (not source or not Path(source).is_file()) and
+                    self.kart_mod_dir_var.get().strip()):
+                model=self._model_from_kart_folder(
+                    self.kart_mod_dir_var.get().strip())
+                if model:source=str(model)
         if not source or not Path(source).is_file():
+            self._linked_ini=None
+            self._linked_ini_context=None
+            self._ini_modified=False
+            self.save_linked_ini_button.configure(state="disabled")
+            self.reload_linked_ini_button.configure(state="disabled")
+            self.linked_ini_status_var.set(
+                "Open a model to load a nearby character.ini, kart.ini or wheels.ini")
             self.model_viewer.scene=None
             self.model_viewer.image.configure(image="",text="Choose a "+(
                 "LEV track" if category=="Track" else "native OBJ")+" to preview.")
             self.model_viewer.detail.set("Waiting for source model.")
             self.preview_textures.load([])
             return
+        if self.active_section in ("character","kart","wheels"):
+            self._bind_source_ini(source,self.active_section)
+        else:
+            self._linked_ini=None
+            self._linked_ini_context=None
+            self.save_linked_ini_button.configure(state="disabled")
+            self.reload_linked_ini_button.configure(state="disabled")
+            self.linked_ini_status_var.set("Tracks use LEV/VRM (no linked model INI)")
         self.model_viewer.load(source,category=category)
+        self._refresh_offset_guides()
         if self.active_section=="kart":
             self.preview_textures.pack_forget()
-            folder=Path(self.kart_color_dir_var.get().strip())
-            if folder.is_dir() and not self.kart_colors_gallery.rows:
+            folder=self.kart_color_dir_var.get().strip()
+            if folder and Path(folder).is_dir() and not self.kart_colors_gallery.rows:
                 self._scan_kart_colors()
         else:
             self.preview_textures.pack(fill="x",pady=(8,0))
             self.preview_textures.load(texture_sources_from_folder(Path(source).parent))
+            self._tag_mousewheel_descendants(self.preview_textures)
         if category=="Track":
             self.model_viewer.detail.set(self.model_viewer.detail.get()+
                 " • VRM atlas decoding is not yet available in preview.")
@@ -830,10 +1224,17 @@ class App(tk.Tk):
         path = filedialog.askopenfilename(title="Choose modular OBJ",
                   filetypes=[("Wavefront model", "*.obj"), ("All files", "*.*")])
         if path:
-            self.mod_obj_var.set(path)
-            self._refresh_current_preview()
-            if self.mod_id_var.get() == "my_custom_mod":
-                self.mod_id_var.set(clean_slug(Path(path).stem))
+            found=find_linked_ini(path,self.active_section)
+            if found and found[0]=="character":
+                self.obj_var.set(path)
+                self._show_section("character")
+                self.analyze()
+            else:
+                self.mod_obj_var.set(path)
+                if found and found[0] in ("kart","wheels"):
+                    self._show_section(found[0])
+                else:
+                    self._refresh_current_preview()
 
     def _import_mod(self):
         kind = self.active_section
@@ -853,7 +1254,10 @@ class App(tk.Tk):
             result = import_mod(obj, root, kind, self.mod_name_var.get(), slug,
                         self.mod_scale_var.get(),
                         {a: v.get() for a,v in self.mod_offsets.items()},
-                        {a: v.get() for a,v in self.mod_mounts.items()} if kind == "kart" else {},
+                        ({**{a:v.get() for a,v in self.mod_mounts.items()},
+                          **{a:v.get() for a,v in self.mod_exhausts.items()},
+                          "exhaust_count":self.mod_exhaust_count_var.get()}
+                         if kind=="kart" else {}),
                         None, replace=replacing)
             # New and existing karts use the SAME texture gallery. Texture
             # names from its editable rows become actual [colors] INI keys.
@@ -968,6 +1372,10 @@ class App(tk.Tk):
                 "Choose a kart mod inside "+str(mods)+" containing kart.ini.")
             return
         self.kart_mod_dir_var.set(str(folder))
+        model=self._model_from_kart_folder(folder)
+        if model:
+            self.mod_obj_var.set(str(model))
+        self._load_selected_kart_offsets(folder/"kart.ini")
         self._refresh_current_preview()
         if self.kart_color_dir_var.get().strip():
             self._scan_kart_colors()
@@ -986,8 +1394,17 @@ class App(tk.Tk):
         """Detect ANY atlas filenames. Show previews and editable game names."""
         try:
             folder=self.kart_color_dir_var.get().strip()
+            if not folder:
+                self.kart_colors_gallery.pack_forget()
+                self.kart_color_info_var.set("Choose a PNG/BMP texture folder to add kart colors (optional).")
+                return
             textures=scan_palette(folder)
             self.kart_colors_gallery.load(textures)
+            self._tag_mousewheel_descendants(self.kart_colors_gallery)
+            if textures:
+                self.kart_colors_gallery.pack(fill="x",pady=(6,0))
+            else:
+                self.kart_colors_gallery.pack_forget()
             info=(str(len(textures))+" textures detected. "
                   "Set in-game names beside each thumbnail, tick variants "
                   "to include, then import/apply. Maximum 12 skins including original.")
@@ -1042,17 +1459,69 @@ class App(tk.Tk):
         self.scroll_canvas.itemconfigure(self._canvas_window, width=event.width)
         self._update_responsive_layout(event.width)
 
+    def _install_mousewheel_router(self):
+        """Process wheel before Tk combobox/text/scrollbar class bindings.
+
+        Tk class defaults otherwise change combobox selections and scroll
+        nested widgets instead of the page. The 3D label is bound first and
+        stops propagation itself, so exactly one zoom event is generated.
+        """
+        tag = "CrashForgeImporterPageWheel"
+        for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.bind_class(tag, event, self._on_mousewheel)
+        self._tag_mousewheel_descendants(self)
+
+    def _tag_mousewheel_descendants(self, parent):
+        tag = "CrashForgeImporterPageWheel"
+        tags = parent.bindtags()
+        if tag not in tags:
+            # After widget-specific bindings (3D zoom), before class bindings
+            # that consume wheel events and block the main page-scroller.
+            parent.bindtags((tags[0], tag, *tags[1:]))
+        for child in parent.winfo_children():
+            self._tag_mousewheel_descendants(child)
+
+    @staticmethod
+    def _widget_is_descendant(widget, ancestor):
+        """True for the 3D image or any child of a given viewport widget."""
+        while widget is not None:
+            if widget is ancestor:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
     def _on_mousewheel(self, event):
-        if getattr(self, "report", None) is not None and event.widget is self.report:
-            return
-        # Mouse wheel over the 3D preview controls ZOOM, not the page scroll.
-        if (hasattr(self,"model_viewer") and
-                event.widget is self.model_viewer.image):
-            return
-        if hasattr(self,"preview_textures"):
-            gallery=self.preview_textures
-            if event.widget is gallery.canvas:
-                return
+        """Wheel over 3D model zooms ONLY; wheel everywhere else scrolls page.
+
+        Tk's toplevel wheel binding runs for its child widgets, too. On Windows
+        the receiving widget can differ from the widget beneath the pointer,
+        so use root mouse coordinates to route the event to exactly one owner.
+        """
+        preview = getattr(self, "model_viewer", None)
+        source = getattr(event, "widget", None)
+        target = None
+        if hasattr(event, "x_root") and hasattr(event, "y_root"):
+            try:
+                target = self.winfo_containing(event.x_root, event.y_root)
+            except (tk.TclError, TypeError, ValueError):
+                pass
+        if target is None:
+            target = source
+
+        if preview is not None:
+            image = preview.image
+            viewport = image.master
+            # The image binding itself already handles this wheel event.
+            if self._widget_is_descendant(source, image):
+                return "break"
+            if self._widget_is_descendant(target, viewport):
+                # The pointer may be on the preview border while Windows
+                # delivered the event to a previously focused entry/control.
+                if getattr(event, "num", None) in (4, 5):
+                    preview._zoom(1.12 if event.num == 4 else 1 / 1.12)
+                elif getattr(event, "delta", 0):
+                    preview._wheel(event)
+                return "break"
 
         if getattr(event, "num", None) == 4:
             step = -3
@@ -1061,13 +1530,15 @@ class App(tk.Tk):
         else:
             delta = getattr(event, "delta", 0)
             if not delta:
-                return
+                return "break"
             step = -int(delta / 120) * 3
             if step == 0:
                 step = -1 if delta > 0 else 1
 
         if self.scroll_canvas.bbox("all"):
             self.scroll_canvas.yview_scroll(step, "units")
+        # Stop Tk's class/all bindings from also changing zoom or selections.
+        return "break"
 
     def _update_responsive_layout(self, width):
         stacked = width < 900
@@ -1137,10 +1608,14 @@ class App(tk.Tk):
         path = filedialog.askopenfilename(title="Choose OBJ model",
                                           filetypes=[("Wavefront OBJ", "*.obj"), ("All files", "*.*")])
         if path:
-            self.obj_var.set(path)
-            if self.slug_var.get() == "my_character":
-                self.slug_var.set(clean_slug(Path(path).stem))
-            self.analyze()
+            found=find_linked_ini(path,"character")
+            if found and found[0] in ("kart","wheels"):
+                self.mod_obj_var.set(path)
+                self._show_section(found[0])
+            else:
+                self.obj_var.set(path)
+                self._refresh_current_preview()
+                self.analyze()
 
     def auto_slug(self):
         self.slug_var.set(clean_slug(self.name_var.get()))
@@ -1275,14 +1750,6 @@ class App(tk.Tk):
                 elif located.suffix.lower() not in (".png", ".bmp"):
                     warnings.append(f"Texture {located.name}: PNG or BMP is recommended.")
 
-        if self.own_wheels_var.get():
-            required = {"wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"}
-            found = {g.lower() for g in stats["groups"]}
-            missing = sorted(required - found)
-            if missing:
-                warnings.append("Own wheels enabled, but these groups were not found: " +
-                                ", ".join(missing) + ". The mod can still be built, but those wheels will not rotate separately.")
-
         custom_icon = None
         if self.icon_mode_var.get() == "custom":
             custom_icon = Path(self.custom_icon_var.get().strip())
@@ -1405,7 +1872,6 @@ class App(tk.Tk):
         else:
             icon_value = f"retail:{self.retail_icon_var.get()}"
 
-        has_wheels = "false" if self.own_wheels_var.get() else "true"
         kart_slug = self.kart_var.get().strip()
         kart_line = f"kart = {kart_slug}\n" if kart_slug else ""
         ini = (
@@ -1415,7 +1881,7 @@ class App(tk.Tk):
             f"fallback_retail = {self.fallback_var.get()}\n"
             f"engine = {self.engine_var.get()}\n"
             f"{kart_line}"
-            f"has_wheels = {has_wheels}\n\n"
+            "modular_body = true\n\n"
             "[model]\n"
             f"scale = {scale}\n"
             f"offset_x = {ox}\n"
@@ -1453,4 +1919,51 @@ if __name__ == "__main__":
         if len(PALETTE) < 2 or MAX_LEV <= 4096 or SLUG_RE.fullmatch("demo-track") is None:
             raise SystemExit(1)
         raise SystemExit(0)
-    App().mainloop()
+    if "--retail-fx-self-test" in sys.argv:
+        # Verify all eight original 3D frames and all five original smoke
+        # textures from the packaged executable, without launching Tk.
+        from forge_preview_retail_fx import (
+            TURBO_FIRE_SIZE,load_retail_turbo_frames,
+            load_retail_smoke_textures)
+        from forge_preview_ctr_particle import (
+            NATIVE_PARTICLE_LIFE,NATIVE_TICKS_PER_SECOND,
+            native_emitter_particles)
+        mock=[{"position":(0.,0.,0.),"rotation":(0.,0.,0.),
+               "native_model_scale":1.0}]
+        alive=native_emitter_particles(mock,1.0)
+        ok=(TURBO_FIRE_SIZE==8 and
+            len(load_retail_turbo_frames())==8 and
+            len(load_retail_smoke_textures())==5 and
+            NATIVE_PARTICLE_LIFE==5 and
+            NATIVE_TICKS_PER_SECOND==30 and
+            len(alive)==5 and alive[0].sprite_index==0 and
+            alive[0].scale_fixed==1936 and alive[0].shade_byte==54)
+        raise SystemExit(0 if ok else 24)
+    if "--gpu-self-test" in sys.argv:
+        # Checks the embedded WGL/ModernGL runtime without showing a window.
+        try:
+            from forge_preview_gpu import GpuPreviewRenderer
+            test_renderer=GpuPreviewRenderer()
+            test_renderer.release()
+        except Exception:
+            raise SystemExit(23)
+        raise SystemExit(0)
+    app=App()
+    # Explicit command-line preview for editor QA and community workflows.
+    # Never autodetect personal game folders or change a mod's source files.
+    if "--preview-kart" in sys.argv:
+        try:
+            flag=sys.argv.index("--preview-kart")
+            folder=Path(sys.argv[flag+1]).resolve()
+            if (folder/"kart.ini").is_file():
+                app._show_section("kart")
+                app.kart_mod_dir_var.set(str(folder))
+                model=app._model_from_kart_folder(folder)
+                if model:
+                    app.mod_obj_var.set(str(model))
+                app._load_selected_kart_offsets(folder/"kart.ini")
+                app._refresh_current_preview()
+                app.after(110,app.model_viewer.frame_markers)
+        except (ValueError,IndexError,OSError):
+            pass
+    app.mainloop()
