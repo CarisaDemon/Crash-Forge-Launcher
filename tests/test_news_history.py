@@ -32,8 +32,8 @@ class NewsHistoryTests(unittest.TestCase):
     def test_existing_ten_publications_are_preserved_offline(self):
         articles = history.local_publications(ROOT)
         versions = [item["version"] for item in articles]
-        self.assertEqual(len(articles), 24)
-        self.assertEqual(versions[:3], ["0.3.53", "0.3.52", "0.3.51"])
+        self.assertEqual(len(articles), 25)
+        self.assertEqual(versions[:3], ["0.3.54", "0.3.53", "0.3.52"])
         self.assertIn("0.3.28", versions)
         self.assertEqual(len(versions), len(set(versions)))
         self.assertTrue(all(item["url"].startswith(history.GITHUB_RELEASES)
@@ -48,15 +48,15 @@ class NewsHistoryTests(unittest.TestCase):
              "notes": ["Future changes"]},
         ]
         merged = history.save_history(patch, ROOT)
-        self.assertEqual(len(merged), 25)
-        self.assertEqual(merged[0]["version"], "0.3.53")
+        self.assertEqual(len(merged), 26)
+        self.assertEqual(merged[0]["version"], "0.3.54")
         self.assertEqual([x["version"] for x in merged].count("0.3.38"), 1)
         self.assertEqual(next(x["notes"] for x in merged if x["version"] == "0.3.38"),
                          ["Updated Model Importer announcement"])
         self.assertIn("0.3.28", [i["version"] for i in merged])
         again = history.save_history(patch, ROOT)
         self.assertEqual(merged, again)
-        self.assertEqual(len(history.local_publications(ROOT)), 25)
+        self.assertEqual(len(history.local_publications(ROOT)), 26)
 
     def test_release_urls_cannot_be_redirected_by_cache_content(self):
         fake = [{"version": "0.3.37",
@@ -169,10 +169,10 @@ class NewsHistoryTests(unittest.TestCase):
 
     def test_image_update_does_not_create_a_new_version(self):
         old = history.local_publications(ROOT)
-        self.assertEqual(old[0]["version"], "0.3.53")
+        self.assertEqual(old[0]["version"], "0.3.54")
         self.assertTrue(history.release_url("v0.3.38").endswith("/tag/v0.3.38"))
         self.assertTrue(history.release_url("v0.3.37").endswith("/tag/v0.3.37"))
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.53")
+        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(), "0.3.54")
 
 
 if __name__ == "__main__":
