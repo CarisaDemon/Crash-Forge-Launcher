@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: python -m pip install --disable-pip-version-check -r requirements-build.txt
 
-      - name: Generate v0.3.52 NEWS from the original launcher Fondo.png
+      - name: Generate launcher NEWS from the original Fondo.png
         shell: pwsh
         run: python release_tools/prepare_news_artwork.py
 
