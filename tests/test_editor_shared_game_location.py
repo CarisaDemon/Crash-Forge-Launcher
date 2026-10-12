@@ -89,9 +89,13 @@ class EditorSharedInstallationTests(unittest.TestCase):
         build=(ROOT/"release_tools"/"build_windows.ps1").read_text(encoding="utf-8")
         for exe in ("CrashForgeOGGToolkit","CrashForgeCSEQToolkit",
                     "CrashForgeModelImporter"):
-            build_part = ('--paths $Source --collect-all numpy --name "'+exe+'"'
-                          if exe == "CrashForgeCSEQToolkit"
-                          else '--paths $Source --name "'+exe+'"')
+            if exe == "CrashForgeCSEQToolkit":
+                build_part = '--paths $Source --collect-all numpy --name "'+exe+'"'
+            elif exe == "CrashForgeModelImporter":
+                build_part = ('--paths $Source --collect-all moderngl '
+                              '--collect-all glcontext --name "'+exe+'"')
+            else:
+                build_part = '--paths $Source --name "'+exe+'"'
             self.assertIn(build_part,build)
         self.assertIn('$modelImporterLogo',build)
         ogg=(ROOT/"companion_tools"/"ogg_toolkit"/"ogg_launcher.py").read_text(encoding="utf-8")
