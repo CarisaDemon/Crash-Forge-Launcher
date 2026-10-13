@@ -151,3 +151,29 @@ def repair_local_files(game_path):
         "missing_disc": any(item.startswith(DISC_IMAGE) for item in missing),
         "missing_required": missing, "ready": not missing,
     }
+
+
+def supports_native_no_mods(executable):
+    """Non-executing check; NEVER launch or terminate the user's game.
+
+    Old game EXEs can ignore unknown command-line flags and boot normally.
+    A subprocess --supports-no-mods timeout would therefore kill the game
+    after five seconds! Only signed-off native builds carry these exact
+    linked-in literals. Missing support safely reports a compatibility issue.
+    """
+    import mmap
+    try:
+        path = Path(executable)
+        if path.is_symlink() or not path.is_file():
+            return False
+        size = path.stat().st_size
+        if size < 1024 or size > 180 * 1024 * 1024:
+            return False
+        with path.open("rb") as stream:
+            if stream.read(2) != b"MZ":
+                return False
+            with mmap.mmap(stream.fileno(), length=0, access=mmap.ACCESS_READ) as mapped:
+                return all(mapped.find(marker) >= 0 for marker in (
+                    b"CFR_NO_MODS_V1", b"--supports-no-mods", b"--no-mods"))
+    except (OSError, ValueError, OverflowError):
+        return False

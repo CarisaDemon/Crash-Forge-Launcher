@@ -1,18 +1,13 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.55/forge-news-v0.3.55.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.56/forge-news-v0.3.56.webp)
 
-# Crash Forge: Racing Launcher v0.3.55 — Forge Profiles & Launch Modes
+# Crash Forge: Racing Launcher v0.3.56 - Safe PLAY & Auto-update Hotfix
 
-**Forge Profiles** lets you save named snapshots of installed mod settings, switch between profiles and keep private cloud copies in your existing Forge Hub account.
+This urgent Windows launcher hotfix addresses two reported problems without modifying the game, installed mods or saves.
 
-- **Local profiles:** Save your currently enabled characters, karts, wheels, tracks and music mods. Apply them by updating the game's native INI switches. Missing mods are listed rather than downloaded automatically.
-- **Forge Hub Cloud:** Explicitly upload, fetch and download private profiles. Local profiles continue working offline. Cloud snapshots save only mod IDs and enabled states — not mod files, personal data or game saves.
-- **Safer deletion:** DELETE LOCAL changes to DELETE CLOUD when selecting a cloud profile. Cloud deletion requires confirmation and never removes installed mods or a local copy. Name/ID conflicts are not silently overwritten.
-- **PLAY menu:** Play normally, Play Without Mods or Debug, with **Remember My Choice** and right-click to show all modes at any time.
-- **Game Health Check:** Experimental, read-only inspection of native files, mod folders, release inventory, disk space and logs.
-- **Windows and monitors:** A shared window-placement rule keeps launcher popups, account dialogs and file pickers on the same monitor as the launcher, including secondary monitors with negative coordinates.
+- **No more five-second forced game exit:** Older Crash Forge: Racing executables can ignore unknown arguments. The previous Play Without Mods detection started an older game and terminated it after a five-second timeout. The launcher now checks native compatibility **without starting the game at all**.
+- **Clear compatibility warning:** If the installed game does not support the --no-mods native argument, Play Without Mods shows a discreet status message (no popup) when a newer game release is needed; it will **not launch, time out or kill** the game. Play With Mods and Debug are unchanged.
+- **Auto-update respects your choice:** Unchecking Auto-update Launcher prevents automatic staging, downloading and applying launcher updates. The preference must be explicitly enabled and saved; missing, malformed or disabled preferences default to OFF. Other launcher windows cannot silently restore an outdated setting.
+- **No unrelated changes:** Forge Profiles, private Forge Hub cloud sync, Game Health Check, and same-monitor windows remain available.
+- **Illustration:** Exactly the same original launcher Fondo.png artwork as before.
 
-**Compatibility:** Play Without Mods needs a compatible Crash Forge: Racing native game release supporting `--no-mods`; older games show a warning and remain untouched. The launcher update **does not** install or update the game.
-
-**Illustration:** The same original Crash Forge Launcher background (`Fondo.png`) is reused. No new artwork was introduced.
-
-The launcher and game remain separately versioned and independently updated.
+Launcher and game updates remain independent. This hotfix does **not** install or replace the game binary. Play Without Mods requires a compatible native game version.

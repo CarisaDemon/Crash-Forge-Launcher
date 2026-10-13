@@ -39,49 +39,52 @@ class LaunchModesTests(unittest.TestCase):
             mock.patch.object(live, "available_game_update", return_value=None),
             mock.patch.object(live.iso_integrity, "start_background_check"),
             mock.patch.object(live.subprocess, "Popen"),
-            mock.patch.object(live.subprocess, "run"),
+            mock.patch.object(live.game_launch, "supports_native_no_mods", return_value=True),
             mock.patch.object(live.messagebox, "showinfo"),
         ]
         self.mocks = [p.start() for p in self.patchers]
         for p in self.patchers:
             self.addCleanup(p.stop)
         self.Popen = self.mocks[4]
-        self.run = self.mocks[5]
+        self.supports = self.mocks[5]
         self.info = self.mocks[6]
 
-    def test_without_mods_passes_flag_after_capability_probe(self):
-        self.run.return_value = subprocess.CompletedProcess(
-            ["--supports-no-mods"], 0, b"CFR_NO_MODS_V1\n", b"")
-        self.app._play_installed_game("clean")
-        self.run.assert_called_once()
+    def test_clean_mode_checks_binary_without_starting_probe(self):
+        with mock.patch.object(live.subprocess,"run",
+                               side_effect=AssertionError("NEVER probe by starting the game")):
+            self.app._play_installed_game("clean")
+        self.supports.assert_called_once_with("C:\\QA Game\\ctr-native.exe")
         self.Popen.assert_called_once()
         self.assertEqual(self.Popen.call_args.args[0],
                          ["C:\\QA Game\\ctr-native.exe", "--no-mods"])
-        self.assertEqual(self.Popen.call_args.kwargs["cwd"], self.app.game_install_path)
         self.info.assert_not_called()
 
-    def test_unsupported_game_not_started_and_not_modified(self):
-        self.run.return_value = subprocess.CompletedProcess(
-            ["--supports-no-mods"], 0, b"unknown flag\n", b"")
-        self.app._play_installed_game("clean")
+    def test_unsupported_game_does_not_launch_even_for_probe(self):
+        self.supports.return_value=False
+        with mock.patch.object(live.subprocess,"run",
+                               side_effect=AssertionError("Old EXE must never execute")):
+            self.app._play_installed_game("clean")
         self.Popen.assert_not_called()
-        self.info.assert_called_once()
+        self.info.assert_not_called()
+        self.app.status_label.configure.assert_any_call(
+            text="PLAY WITHOUT MODS needs a compatible native game release.")
 
-    def test_probe_timeout_never_runs_unpatched_game(self):
-        self.run.side_effect = subprocess.TimeoutExpired(["--supports-no-mods"], 5)
-        self.app._play_installed_game("clean")
+    def test_old_game_never_gets_five_second_timeout(self):
+        self.supports.return_value=False
+        with mock.patch.object(live.subprocess,"run",
+                               side_effect=AssertionError("Forbidden timeout probe")):
+            self.app._play_installed_game("clean")
         self.Popen.assert_not_called()
-        self.info.assert_called_once()
 
     def test_normal_mode_passes_no_new_game_flag(self):
         self.app._play_installed_game("normal")
-        self.run.assert_not_called()
+        self.supports.assert_not_called()
         self.assertEqual(self.Popen.call_args.args[0],
                          ["C:\\QA Game\\ctr-native.exe"])
 
     def test_debug_mode_keeps_console_attached(self):
         self.app._play_installed_game("debug")
-        self.run.assert_not_called()
+        self.supports.assert_not_called()
         self.assertIsNone(self.Popen.call_args.kwargs["stdout"])
         self.assertIsNone(self.Popen.call_args.kwargs["stderr"])
 

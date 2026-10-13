@@ -600,7 +600,7 @@ class ForgeLiveMixin:
                 if manual or result["status"] == "damaged":
                     self.status_label.configure(text=message[:175])
                 if (result["status"] == "damaged" and
-                        self.launcher_auto_update and
+                        self._launcher_automatic_updates_allowed() and
                         not self.launcher_update_busy):
                     self._request_launcher_update_check(manual=False)
             elif event == "launcher_update_progress":
@@ -614,7 +614,7 @@ class ForgeLiveMixin:
                 release, pending, installed, manual, portable = data
                 self.launcher_last_check = time.time()
                 self._launcher_update_retry_after = 0
-                if pending and self.launcher_auto_update:
+                if pending and self._launcher_automatic_updates_allowed():
                     self.launcher_update_ready = pending
                     self._set_restart_buttons_enabled(True)
                     result = ("Launcher v" + pending["version"] +
@@ -627,7 +627,7 @@ class ForgeLiveMixin:
                                  self._forge_base_dir()))):
                     result = ("Launcher v" + release["version"] +
                               " available. " +
-                              ("Auto-update disabled." if not self.launcher_auto_update else
+                              ("Auto-update disabled." if not self._launcher_automatic_updates_allowed() else
                                "Portable EXE migration available; activate auto-update."
                                if not portable else
                                "Download is waiting for the next auto-check."))
@@ -639,7 +639,7 @@ class ForgeLiveMixin:
                 self.launcher_update_status_var.set(result)
                 self._save_launcher_settings()
                 if (self._launcher_integrity_needs_repair and
-                        self.launcher_auto_update and not pending):
+                        self._launcher_automatic_updates_allowed() and not pending):
                     # A normal version check may have been in flight before
                     # the local integrity audit completed. Retry once as repair.
                     self.after(100, lambda: self._request_launcher_update_check(
@@ -845,9 +845,16 @@ class ForgeLiveMixin:
         threading.Thread(target=worker, daemon=True,
                          name="ForgeLauncherIntegrity").start()
 
+    def _launcher_automatic_updates_allowed(self):
+        """Both the live checkbox and the persisted permission must agree."""
+        if getattr(self, "launcher_auto_update", False) is not True:
+            return False
+        return launcher_updates.automatic_updates_allowed(
+            os.path.join(self._forge_base_dir(), "launcher_settings.json"))
+
     def _startup_launcher_update_check(self):
         """Launcher code uses its OWN GitHub repo, not game release tags."""
-        if self.launcher_auto_update:
+        if self._launcher_automatic_updates_allowed():
             pending = launcher_updates.pending_update()
             if launcher_updates.is_portable_build():
                 version_dir = self._forge_base_dir()
@@ -862,12 +869,13 @@ class ForgeLiveMixin:
                     ("Launcher v" + pending["version"] +
                      " verified; when you close, the updated EXE will open automatically."))
                 return
-        self._request_launcher_update_check(manual=False)
+        if self._launcher_automatic_updates_allowed():
+            self._request_launcher_update_check(manual=False)
 
     def _scheduled_launcher_update_check(self):
         """At most every six hours when online; no interruptions to gameplay."""
         try:
-            if (self.launcher_auto_update and not self.launcher_update_busy
+            if (self._launcher_automatic_updates_allowed() and not self.launcher_update_busy
                     and not self.launcher_update_ready
                     and time.time() >= self._launcher_update_retry_after
                     and time.time()-float(self.launcher_last_check) >= 6*3600):
@@ -878,7 +886,7 @@ class ForgeLiveMixin:
     def _request_launcher_update_check(self, manual=False):
         if self.launcher_update_busy:
             return
-        if not manual and not self.launcher_auto_update:
+        if not manual and not self._launcher_automatic_updates_allowed():
             return
         if not manual and time.time() < self._launcher_update_retry_after:
             return
@@ -890,7 +898,8 @@ class ForgeLiveMixin:
                        launcher_updates.portable_target_for_source(
                            self._forge_base_dir()))
         installed = launcher_updates.read_local_version(install_dir)
-        auto = bool(self.launcher_auto_update)
+        auto = self._launcher_automatic_updates_allowed()
+        settings_file = os.path.join(self._forge_base_dir(), "launcher_settings.json")
         repair = bool(getattr(self, "_launcher_integrity_needs_repair", False))
 
         def worker():
@@ -902,7 +911,7 @@ class ForgeLiveMixin:
                         force_repair=repair):
                     # In source/.bat mode this stages a SEPARATE portable
                     # installation. It never overwrites .py, .bat or source assets.
-                    if auto:
+                    if auto and launcher_updates.automatic_updates_allowed(settings_file):
                         def report(phase, done, total):
                             self.online_queue.put(
                                 ("launcher_update_progress",
@@ -910,6 +919,9 @@ class ForgeLiveMixin:
                         pending = launcher_updates.stage_release(
                             release, installed, progress=report,
                             app_dir=install_dir, force_repair=repair)
+                        # Discard staged readiness if disabled during transfer.
+                        if not launcher_updates.automatic_updates_allowed(settings_file):
+                            pending = None
                 self.online_queue.put(
                     ("launcher_update_ok",
                      (release, pending, installed, manual, portable)))
@@ -1217,18 +1229,13 @@ class ForgeLiveMixin:
             iso_integrity.start_background_check(self.game_install_path, "play")
         except Exception:
             pass
-        if mode == "clean":
-            try:
-                probe = subprocess.run([state["exe_path"], "--supports-no-mods"],
-                                       cwd=self.game_install_path, stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE, timeout=5,
-                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-                if probe.returncode != 0 or b"CFR_NO_MODS_V1" not in probe.stdout:
-                    raise RuntimeError("Installed game does not support clean-session launch.")
-            except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
-                self.status_label.configure(text="Clean launch needs a newer native game build.")
-                messagebox.showinfo("Clean launch", str(exc)+"\nNo mods or game files were changed.", parent=self)
-                return
+        if mode == "clean" and not game_launch.supports_native_no_mods(state["exe_path"]):
+            # The previous 5s subprocess capability probe was itself a game
+            # launch on older builds, then forcibly killed it on timeout.
+            # Never execute an unknown EXE to discover whether it can launch.
+            self.status_label.configure(
+                text="PLAY WITHOUT MODS needs a compatible native game release.")
+            return
         try:
             hidden = subprocess.CREATE_NO_WINDOW if os.name == "nt" and mode != "debug" else 0
             process = subprocess.Popen(

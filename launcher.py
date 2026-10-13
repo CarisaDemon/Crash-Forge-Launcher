@@ -3099,7 +3099,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             frequency if frequency in releases.CHECK_CHOICES else "Daily"
         )
         self.release_last_result = str(data.get("release_last_result", "") or "")[:140]
-        self.launcher_auto_update = data.get("launcher_auto_update", True) is not False
+        self.launcher_auto_update = data.get("launcher_auto_update") is True
         try:
             self.launcher_last_check = max(0.0, float(data.get("launcher_last_check", 0)))
         except (ValueError, TypeError, OverflowError):
@@ -3120,8 +3120,22 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 SETTINGS_FILE, self.game_install_path)
         return data
 
-    def _save_launcher_settings(self):
+    def _save_launcher_settings(self, *, update_consent=None):
+        # Prefer the most recent disk setting over stale state held by a
+        # second running launcher. Only the checkbox handler may change
+        # auto-update consent; unrelated settings saves MUST NOT reset it.
         data = dict(getattr(self, "_launcher_settings_data", {}) or {})
+        try:
+            if os.path.isfile(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8-sig") as stream:
+                    latest = json.load(stream)
+                if isinstance(latest, dict):
+                    data.update(latest)
+        except (OSError, UnicodeError, ValueError, TypeError):
+            pass
+        requested_consent = (
+            update_consent is True if update_consent is not None
+            else data.get("launcher_auto_update") is True)
         data.update({
             "game_install_path": getattr(self, "game_install_path", ""),
             "remember_play_choice": bool(getattr(self, "remember_play_choice", False)),
@@ -3129,7 +3143,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             "release_check_frequency": getattr(self, "release_check_frequency", "Daily"),
             "release_last_check": getattr(self, "release_last_check", 0.0),
             "release_last_result": getattr(self, "release_last_result", "")[:140],
-            "launcher_auto_update": bool(getattr(self, "launcher_auto_update", True)),
+            "launcher_auto_update": requested_consent,
             "launcher_last_check": getattr(self, "launcher_last_check", 0.0),
             "launcher_last_result": getattr(self, "launcher_last_result", "")[:140],
         })
@@ -3139,6 +3153,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp, SETTINGS_FILE)
             self._launcher_settings_data = data
+            self.launcher_auto_update = requested_consent
+            if hasattr(self, "launcher_auto_update_var"):
+                self.launcher_auto_update_var.set(requested_consent)
             # Best-effort mirror (contains no account/session information).
             editor_config.save_launcher_selection(
                 SETTINGS_FILE, str(self.game_install_path or ""))
@@ -3495,7 +3512,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
     def _launcher_restart_required(self):
         """Only a verified, staged, newer launcher release needs a restart."""
-        if not (getattr(self, "launcher_auto_update", False) and
+        if not (self._launcher_automatic_updates_allowed() and
                 getattr(self, "launcher_update_ready", None)):
             return False
         pending = launcher_updates.pending_update()
@@ -3531,7 +3548,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             self.launcher_update_status_var.set(
                 "Wait for the active transfer before restarting.")
             return
-        if not getattr(self, "launcher_auto_update", True):
+        if not self._launcher_automatic_updates_allowed():
             self.launcher_update_status_var.set(
                 "Enable launcher auto-update before restarting.")
             return
@@ -3539,7 +3556,15 @@ class Launcher(ForgeLiveMixin, tk.Tk):
 
     def _toggle_launcher_auto_update(self):
         self.launcher_auto_update = bool(self.launcher_auto_update_var.get())
-        self._save_launcher_settings()
+        if not self._save_launcher_settings(update_consent=self.launcher_auto_update):
+            self.launcher_auto_update = False
+            self.launcher_auto_update_var.set(False)
+            self.launcher_update_status_var.set(
+                "Could not save your update preference. Automatic updates are paused.")
+            self._set_restart_buttons_enabled(False)
+            return
+        if not self.launcher_auto_update:
+            self.launcher_update_ready = None
         self._set_restart_buttons_enabled(
             self.launcher_auto_update and
             bool(getattr(self, "launcher_update_ready", None)))
@@ -5313,7 +5338,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         """
         if not getattr(self, "_launcher_shutdown_started", False):
             self._launcher_shutdown_started = True
-            if (getattr(self, "launcher_auto_update", False)
+            if (self._launcher_automatic_updates_allowed()
                     and getattr(self, "launcher_update_ready", None)):
                 try:
                     portable = launcher_updates.is_portable_build()

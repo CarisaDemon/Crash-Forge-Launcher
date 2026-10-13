@@ -1,5 +1,14 @@
 Crash Forge: Racing Launcher
 
+v0.3.56 - Hotfix: Safe Play & Update Preferences
+- Fix a five-second game shutdown from probing old game EXEs with unsupported launch arguments.
+- Detect native Play Without Mods compatibility without running or terminating the installed game.
+- Report older-game incompatibility quietly in the launcher status, without an interrupting popup.
+- Respect unchecked Auto-update Launcher: never download, stage or apply an update without stored consent.
+- Keep auto-update off by default for missing or invalid launcher settings.
+- Prevent another launcher window from overwriting a disabled auto-update preference during unrelated settings changes.
+- Keep Forge Profiles, monitor fixes, NEWS and original Fondo.png artwork unchanged.
+
 v0.3.55 - Forge Profiles & Launch Modes
 - Save and apply local Forge Profiles by changing native mod INI states.
 - Back up private cloud profiles manually through the existing Forge Hub account.

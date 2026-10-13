@@ -84,6 +84,23 @@ def is_portable_build():
     return os.name == "nt" and bool(getattr(sys, "frozen", False))
 
 
+def automatic_updates_allowed(settings_file):
+    """Updates are OPT-IN. A missing, malformed, or false preference denies.
+
+    Reads the persisted value at the final stage/apply boundary, not only a
+    stale value captured when a background download was requested.
+    """
+    try:
+        settings=Path(settings_file)
+        if not settings.is_file() or settings.stat().st_size > 65536:
+            return False
+        with settings.open("r",encoding="utf-8-sig") as f:
+            data=json.load(f)
+        return isinstance(data,dict) and data.get("launcher_auto_update") is True
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return False
+
+
 def read_local_version(app_dir):
     path = Path(app_dir) / "launcher_version.txt"
     try:

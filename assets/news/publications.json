@@ -3,6 +3,19 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.56",
+      "title": "Safe PLAY & Auto-update Hotfix",
+      "date": "2026-10-12",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.56",
+      "notes": [
+        "Prevent five-second game shutdown when checking Play Without Mods support.",
+        "Check compatibility without launching the game or showing a disruptive popup.",
+        "Keep Auto-update Launcher disabled unless explicitly enabled in saved settings.",
+        "Prevent stale preferences from restoring automatic downloads behind the user's back.",
+        "Keep the same original launcher illustration and all Forge Profiles features."
+      ]
+    },
+    {
       "version": "0.3.55",
       "title": "Forge Profiles & Launch Modes",
       "date": "2026-10-12",
