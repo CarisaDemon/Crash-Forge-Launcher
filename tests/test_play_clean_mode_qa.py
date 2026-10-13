@@ -41,6 +41,7 @@ class LaunchModesTests(unittest.TestCase):
             mock.patch.object(live.subprocess, "Popen"),
             mock.patch.object(live.game_launch, "supports_native_no_mods", return_value=True),
             mock.patch.object(live.messagebox, "showinfo"),
+            mock.patch.object(live,"CLEAN_PLAY_PUBLIC_ENABLED",True),
         ]
         self.mocks = [p.start() for p in self.patchers]
         for p in self.patchers:

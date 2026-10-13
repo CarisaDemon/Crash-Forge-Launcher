@@ -34,7 +34,7 @@ class NewsHistoryTests(unittest.TestCase):
         versions = [item["version"] for item in articles]
         self.assertEqual(len(articles), len(json.loads((ROOT/"assets"/"news"/"publications.json").read_text(encoding="utf-8"))["publications"]))
         self.assertEqual(versions[:3], [
-            (ROOT/"launcher_version.txt").read_text().strip(), "0.3.55", "0.3.54"])
+            (ROOT/"launcher_version.txt").read_text().strip(), "0.3.56", "0.3.55"])
         self.assertIn("0.3.28", versions)
         self.assertEqual(len(versions), len(set(versions)))
         self.assertTrue(all(item["url"].startswith(history.GITHUB_RELEASES)

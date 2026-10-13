@@ -41,6 +41,14 @@ def available_game_update(game_path, release):
             "unknown": comparison is None}
 
 
+# Deliberately disabled until a PUBLIC native game release supports
+# --no-mods. Local experimental builds don't make this a public feature.
+CLEAN_PLAY_PUBLIC_ENABLED = False
+CLEAN_PLAY_DEVELOPMENT_MESSAGE = (
+    "PLAY WITHOUT MODS is in development. We're working on it."
+)
+
+
 class ForgeLiveMixin:
     def _post_init_live(self):
         self.remote_mods = []
@@ -133,7 +141,12 @@ class ForgeLiveMixin:
         status = services.real_game_status(self.game_install_path)
         if status["installed"]:
             mode = self.preferred_play_mode if getattr(self, "remember_play_choice", False) else None
-            if mode:
+            # Users who saved clean as a favourite on an older launcher
+            # must not get a silent no-op, accidental game start, or loop.
+            if mode == "clean" and not CLEAN_PLAY_PUBLIC_ENABLED:
+                self.status_label.configure(text=CLEAN_PLAY_DEVELOPMENT_MESSAGE)
+                self._show_play_mode_selector()
+            elif mode:
                 self._play_installed_game(mode)
             else:
                 self._show_play_mode_selector()
@@ -1166,6 +1179,9 @@ class ForgeLiveMixin:
                  bg="#0C0F14",fg="#A0A7B0").pack(anchor="w",padx=24,pady=(0,14))
         remember=tk.BooleanVar(value=bool(getattr(self,"remember_play_choice",False)))
         def choose(mode):
+            if mode == "clean" and not CLEAN_PLAY_PUBLIC_ENABLED:
+                self.status_label.configure(text=CLEAN_PLAY_DEVELOPMENT_MESSAGE)
+                return
             self.remember_play_choice = bool(remember.get())
             self.preferred_play_mode = mode if self.remember_play_choice else "normal"
             if not self._save_launcher_settings():
@@ -1174,20 +1190,28 @@ class ForgeLiveMixin:
             self._play_installed_game(mode)
         items=(
             ("normal","PLAY WITH MODS","Start normally with your installed mods."),
-            ("clean","PLAY WITHOUT MODS","One clean session; your mod files stay intact."),
+            ("clean","PLAY WITHOUT MODS","IN DEVELOPMENT - We're working on it."),
             ("debug","DEBUG MODE","Open the game with a visible console."),
         )
         for mode,title,detail in items:
-            card=tk.Frame(win,bg="#1A1F27",highlightbackground="#343A43",
-                          highlightthickness=1,cursor="hand2")
+            disabled = mode == "clean" and not CLEAN_PLAY_PUBLIC_ENABLED
+            card_bg = "#14181E" if disabled else "#1A1F27"
+            card_cursor = "arrow" if disabled else "hand2"
+            card=tk.Frame(win,bg=card_bg,highlightbackground=(
+                              "#272C34" if disabled else "#343A43"),
+                          highlightthickness=1,cursor=card_cursor)
             card.pack(fill="x",padx=24,pady=4,ipady=5)
-            for line,fg,font in ((title,"#FFAD6C",("Bahnschrift SemiBold",11)),
-                                 (detail,"#AEB5BC",("Bahnschrift",9))):
-                lbl=tk.Label(card,text=line,bg="#1A1F27",fg=fg,font=font,
-                             cursor="hand2",anchor="w")
+            for line,fg,font in ((title,"#8C939B" if disabled else "#FFAD6C",
+                                  ("Bahnschrift SemiBold",11)),
+                                 (detail,"#777F88" if disabled else "#AEB5BC",
+                                  ("Bahnschrift",9))):
+                lbl=tk.Label(card,text=line,bg=card_bg,fg=fg,font=font,
+                             cursor=card_cursor,anchor="w")
                 lbl.pack(fill="x",padx=12,pady=2)
-                lbl.bind("<Button-1>",lambda e,m=mode:choose(m))
-            card.bind("<Button-1>",lambda e,m=mode:choose(m))
+                if not disabled:
+                    lbl.bind("<Button-1>",lambda e,m=mode:choose(m))
+            if not disabled:
+                card.bind("<Button-1>",lambda e,m=mode:choose(m))
         tk.Checkbutton(win,text="Remember my choice",variable=remember,
                        bg="#0C0F14",fg="#DBDEE2",selectcolor="#242A32",
                        activebackground="#0C0F14",activeforeground="#FF9B53",
@@ -1197,6 +1221,9 @@ class ForgeLiveMixin:
 
     def _play_installed_game(self, mode="normal"):
         """Launch only from the explicit Settings folder, with visible errors."""
+        if mode == "clean" and not CLEAN_PLAY_PUBLIC_ENABLED:
+            self.status_label.configure(text=CLEAN_PLAY_DEVELOPMENT_MESSAGE)
+            return
         if getattr(self, "game_update_busy", False):
             self.status_label.configure(
                 text="Wait for the game update to finish before playing.")

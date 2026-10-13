@@ -3,6 +3,18 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.57",
+      "title": "Play Without Mods - In Development",
+      "date": "2026-10-12",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.57",
+      "notes": [
+        "PLAY WITHOUT MODS is now visibly disabled: IN DEVELOPMENT - We're working on it.",
+        "Previously remembered clean launches show the PLAY selector instead of doing nothing.",
+        "PLAY WITH MODS and DEBUG MODE remain available; no game or mod files are changed.",
+        "Keep the same original illustration and all Forge Hub and auto-update fixes."
+      ]
+    },
+    {
       "version": "0.3.56",
       "title": "Safe PLAY & Auto-update Hotfix",
       "date": "2026-10-12",

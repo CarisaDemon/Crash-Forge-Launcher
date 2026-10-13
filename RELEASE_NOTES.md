@@ -1,13 +1,14 @@
-![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.56/forge-news-v0.3.56.webp)
+![Crash Forge Launcher background](https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/download/v0.3.57/forge-news-v0.3.57.webp)
 
-# Crash Forge: Racing Launcher v0.3.56 - Safe PLAY & Auto-update Hotfix
+# Crash Forge: Racing Launcher v0.3.57 - Play Without Mods: In Development
 
-This urgent Windows launcher hotfix addresses two reported problems without modifying the game, installed mods or saves.
+This small launcher update temporarily disables the **PLAY WITHOUT MODS** choice because the currently published Crash Forge: Racing game (v2.1.1) does not support the native clean-play mode.
 
-- **No more five-second forced game exit:** Older Crash Forge: Racing executables can ignore unknown arguments. The previous Play Without Mods detection started an older game and terminated it after a five-second timeout. The launcher now checks native compatibility **without starting the game at all**.
-- **Clear compatibility warning:** If the installed game does not support the --no-mods native argument, Play Without Mods shows a discreet status message (no popup) when a newer game release is needed; it will **not launch, time out or kill** the game. Play With Mods and Debug are unchanged.
-- **Auto-update respects your choice:** Unchecking Auto-update Launcher prevents automatic staging, downloading and applying launcher updates. The preference must be explicitly enabled and saved; missing, malformed or disabled preferences default to OFF. Other launcher windows cannot silently restore an outdated setting.
-- **No unrelated changes:** Forge Profiles, private Forge Hub cloud sync, Game Health Check, and same-monitor windows remain available.
-- **Illustration:** Exactly the same original launcher Fondo.png artwork as before.
+- The option stays visible but greyed out and unclickable, labeled **IN DEVELOPMENT - We're working on it**.
+- If **Remember My Choice** was previously set to Play Without Mods, pressing PLAY now opens the selector so you can choose **PLAY WITH MODS** or **DEBUG MODE** instead.
+- Any remaining attempt to invoke the clean option is safely blocked with a quiet status message. No extra game process is launched and no popup is shown.
+- **PLAY WITH MODS**, **DEBUG MODE**, Forge Profiles, manual cloud sync, window placement, and the v0.3.56 auto-update privacy fixes are unchanged.
+- We will enable Play Without Mods again once a compatible **official game release** is available.
+- The illustration is exactly the same original Crash Forge Launcher background (Fondo.png).
 
-Launcher and game updates remain independent. This hotfix does **not** install or replace the game binary. Play Without Mods requires a compatible native game version.
+This is a **launcher-only** update. It does not change the game, any installed mods, or their configuration.

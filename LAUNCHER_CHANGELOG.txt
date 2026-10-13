@@ -1,5 +1,12 @@
 Crash Forge: Racing Launcher
 
+v0.3.57 - Play Without Mods: In Development
+- Disable PLAY WITHOUT MODS until the public game supports clean sessions.
+- Show a grey menu entry: IN DEVELOPMENT - We're working on it.
+- Old saved Clean Play choices now reopen the selector for With Mods or Debug.
+- Quietly block clean launch attempts, without popups or starting the game.
+- Preserve existing mods, preferences, Forge Profiles and the original artwork.
+
 v0.3.56 - Hotfix: Safe Play & Update Preferences
 - Fix a five-second game shutdown from probing old game EXEs with unsupported launch arguments.
 - Detect native Play Without Mods compatibility without running or terminating the installed game.
