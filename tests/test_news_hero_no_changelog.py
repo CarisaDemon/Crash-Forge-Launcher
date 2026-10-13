@@ -36,7 +36,8 @@ class LauncherNewsInsteadOfChangelog(unittest.TestCase):
         self.assertIn('self.news_rows',self.news)
 
     def test_game_and_launcher_version_unchanged(self):
-        self.assertEqual((ROOT/"launcher_version.txt").read_text().strip(),"0.3.54")
+        version=(ROOT/"launcher_version.txt").read_text().strip()
+        self.assertIn("v"+version, (ROOT/"RELEASE_NOTES.md").read_text(encoding="utf-8"))
 
 if __name__=="__main__":
     unittest.main()

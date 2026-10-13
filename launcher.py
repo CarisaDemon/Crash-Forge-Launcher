@@ -23,6 +23,8 @@ import forge_editor_registry as editor_registry
 import forge_editor_geometry as editor_geometry
 import forge_editor_config as editor_config
 import forge_mod_manager as mod_manager
+import forge_profiles_ui
+import forge_window_policy
 import forge_mod_uninstall as mod_uninstall
 import forge_account_badge as account_badge
 from forge_dialogs import ask_mod_install, ask_mod_uninstall, preview_newer_version
@@ -416,6 +418,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         self._drag_x = 0
         self._drag_y = 0
         self._center()
+        forge_window_policy.install(self)
         self._build()
         self._post_init_live()
         self.bind("<Configure>", self._on_root_configure, add="+")
@@ -2538,6 +2541,7 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             ForgeButton(self.sidebar, "REPAIR", "repair", self._check_local_game_files),
             ForgeButton(self.sidebar, "MODS", "mods", self._show_forge_hub),
         ]
+        self.sidebar_buttons[0].bind("<Button-3>", self._show_play_mode_selector)
         for idx, button in enumerate(self.sidebar_buttons):
             button.pack(padx=20, pady=(1, 4) if idx == 0 else 4)
 
@@ -3086,6 +3090,10 @@ class Launcher(ForgeLiveMixin, tk.Tk):
                 data = {}
 
         self._launcher_settings_data = dict(data)
+        self.remember_play_choice = data.get("remember_play_choice", False) is True
+        self.preferred_play_mode = data.get("preferred_play_mode", "normal")
+        if self.preferred_play_mode not in ("normal", "clean", "debug"):
+            self.preferred_play_mode = "normal"
         frequency = str(data.get("release_check_frequency", "Daily"))
         self.release_check_frequency = (
             frequency if frequency in releases.CHECK_CHOICES else "Daily"
@@ -3116,6 +3124,8 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         data = dict(getattr(self, "_launcher_settings_data", {}) or {})
         data.update({
             "game_install_path": getattr(self, "game_install_path", ""),
+            "remember_play_choice": bool(getattr(self, "remember_play_choice", False)),
+            "preferred_play_mode": getattr(self, "preferred_play_mode", "normal"),
             "release_check_frequency": getattr(self, "release_check_frequency", "Daily"),
             "release_last_check": getattr(self, "release_last_check", 0.0),
             "release_last_result": getattr(self, "release_last_result", "")[:140],
@@ -3340,10 +3350,44 @@ class Launcher(ForgeLiveMixin, tk.Tk):
         hint.pack(fill="x", pady=(5, 0))
         self.settings_hint = hint
 
+        # Read-only local support report; never modifies mods or saves.
+        tk.Button(body, text="GAME HEALTH CHECK", command=self._show_game_health_check,
+                  bg="#39200F", fg="#FFE0C3", relief="flat", cursor="hand2",
+                  font=("Bahnschrift SemiBold", 8), pady=5).pack(fill="x", pady=(9, 0))
         # Game updates belong exclusively to the large sidebar UPDATE button.
         # Settings is reserved for the launcher's OWN automatic updater.
         self._add_launcher_update_settings_controls(body)
         self._refresh_install_location_ui()
+
+    def _show_game_health_check(self):
+        import forge_diagnostics
+        win = tk.Toplevel(self)
+        win.title("Crash Forge: Racing - Game Health")
+        win.configure(bg="#0C0F14")
+        win.geometry("650x445")
+        win.transient(self)
+        tk.Frame(win, bg="#FF6A00", height=4).pack(fill="x")
+        tk.Label(win, text="GAME HEALTH CHECK", font=("Bahnschrift SemiBold", 17),
+                 bg="#0C0F14", fg="#FFFFFF").pack(anchor="w", padx=22, pady=(14, 2))
+        tk.Label(win, text="Read-only checks. No mods, saves or original disc data are changed.",
+                 font=("Bahnschrift", 9), bg="#0C0F14", fg="#AEB6C0").pack(anchor="w", padx=22)
+        report = tk.Text(win, bg="#141920", fg="#E7E9EB", relief="flat",
+                         font=("Consolas", 10), wrap="word", height=15)
+        report.pack(fill="both", expand=True, padx=20, pady=15)
+        def refresh():
+            rows=forge_diagnostics.inspect(self.game_install_path)
+            report.configure(state="normal")
+            report.delete("1.0", "end")
+            for label, result, detail in rows:
+                report.insert("end", f"[{result}] {label}\n  {detail}\n\n")
+            report.configure(state="disabled")
+        row=tk.Frame(win,bg="#0C0F14")
+        row.pack(fill="x",padx=20,pady=(0,15))
+        tk.Button(row,text="RUN AGAIN",command=refresh,bg="#49270F",fg="white",
+                  relief="flat",padx=12,pady=5).pack(side="left")
+        tk.Button(row,text="CLOSE",command=win.destroy,bg="#292E35",fg="white",
+                  relief="flat",padx=12,pady=5).pack(side="right")
+        refresh()
 
     def _add_release_settings_controls(self, parent, compact=False):
         """Release check cadence; no silent downloads or game process changes."""
@@ -4042,6 +4086,9 @@ class Launcher(ForgeLiveMixin, tk.Tk):
             font=("Bahnschrift SemiBold", 8),
         )
         self.hub_installed_summary.pack(side="left")
+        profiles_button = self._hub_button(
+            manager_row, "PROFILES", lambda: forge_profiles_ui.show(self))
+        profiles_button.pack(side="right", padx=(0, 6))
         music_filter = self._hub_button(
             manager_row, "MUSIC", lambda: self._set_hub_type("Music"),
             width=6
@@ -5328,12 +5375,15 @@ if __name__ == "__main__":
         ["--preview-new-version"],
         ["--preview-mod-install"],
         ["--preview-dialogs"],
+        ["--preview-play-modes"],
     )
     if preview_mode:
         os.environ["CFR_SCREENSHOT_PREVIEW"] = "1"
     app = Launcher()
     if preview_mode:
         app.launcher_auto_update = False
+    if sys.argv[1:] == ["--preview-play-modes"]:
+        app.after(700, app._show_play_mode_selector)
     if sys.argv[1:] == ["--preview-new-version"]:
         app.after(700, lambda: preview_newer_version(
             app, icon_path=os.path.join(

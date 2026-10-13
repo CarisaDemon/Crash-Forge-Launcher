@@ -3,6 +3,21 @@
   "repository": "CarisaDemon/Crash-Forge-Launcher",
   "publications": [
     {
+      "version": "0.3.55",
+      "title": "Forge Profiles & Launch Modes",
+      "date": "2026-10-12",
+      "url": "https://github.com/CarisaDemon/Crash-Forge-Launcher/releases/tag/v0.3.55",
+      "notes": [
+        "Save and apply local mod profiles without reinstalling or changing unrelated mods.",
+        "Use your existing Forge Hub account to manually upload, fetch and download private cloud profiles.",
+        "DELETE LOCAL becomes DELETE CLOUD for cloud selections; deletion never removes installed mods or local copies.",
+        "PLAY remembers With Mods, Without Mods or Debug; right-click always opens the selection menu.",
+        "New experimental read-only Game Health Check for local file integrity and mods.",
+        "Dialogs and child windows now follow the launcher's current monitor.",
+        "Keep the same original launcher background illustration; game and launcher versions remain separate."
+      ]
+    },
+    {
       "version": "0.3.54",
       "title": "Forge Hub Session Reliability",
       "date": "2026-10-12",

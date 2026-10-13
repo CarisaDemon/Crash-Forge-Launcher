@@ -222,13 +222,14 @@ class AccountClient:
                 if tmp.exists():
                     tmp.unlink()
 
-    def _request(self, url: str, payload=None, *, token=None, method="POST"):
+    def _request(self, url: str, payload=None, *, token=None, method="POST", prefer=None):
         parsed = urllib.parse.urlsplit(url)
         if (parsed.scheme != "https" or parsed.hostname != "mjvpkerobjgoldmimyxz.supabase.co"
                 or parsed.port not in (None, 443) or parsed.username or parsed.password
                 or parsed.fragment or
                 not parsed.path.startswith(("/auth/v1/", "/rest/v1/forge_accounts",
-                                            "/functions/v1/forge-launcher-auth"))):
+                                            "/functions/v1/forge-launcher-auth",
+                                            "/rest/v1/forge_mod_profiles"))):
             raise AccountError("Unexpected authentication endpoint")
         headers = {
             "apikey": PUBLISHABLE,
@@ -239,6 +240,10 @@ class AccountClient:
         }
         if token:
             headers["Authorization"] = "Bearer " + str(token)
+        if prefer is not None:
+            if prefer != "return=representation":
+                raise AccountError("Unexpected REST response preference")
+            headers["Prefer"] = prefer
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8") if payload is not None else None
         request = urllib.request.Request(
             url, data=body, headers=headers, method=method,

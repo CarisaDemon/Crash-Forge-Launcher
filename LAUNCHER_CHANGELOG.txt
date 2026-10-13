@@ -1,5 +1,17 @@
 Crash Forge: Racing Launcher
 
+v0.3.55 - Forge Profiles & Launch Modes
+- Save and apply local Forge Profiles by changing native mod INI states.
+- Back up private cloud profiles manually through the existing Forge Hub account.
+- Manage local and cloud profiles independently, with confirmation before deleting.
+- DELETE LOCAL dynamically becomes DELETE CLOUD when a cloud profile is selected; protect mods and local profiles from cloud deletion.
+- Prevent accidental cloud overwrites, flag matching local/cloud profile conflicts, and report missing mods without installing them.
+- New PLAY menu: With Mods, Without Mods and Debug; Remember My Choice saves the mode and right click always opens the selector.
+- Clean Play requires a compatible Crash Forge: Racing native build; unsupported game versions are warned, never modified.
+- Add experimental, read-only Game Health Check for official game files, installed mods, logs and free disk space.
+- New launcher-wide monitor policy: every child window follows the launcher's monitor, including Windows file dialogs and secondary screens.
+- Continue shipping the same original Fondo.png NEWS artwork; launcher/game updates stay separate.
+
 v0.3.54
 - Keep Forge Hub sessions signed in across launcher and editor use.
 - Prevent stale profile updates from overwriting newer login tokens.

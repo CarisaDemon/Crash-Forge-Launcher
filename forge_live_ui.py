@@ -132,7 +132,11 @@ class ForgeLiveMixin:
             return
         status = services.real_game_status(self.game_install_path)
         if status["installed"]:
-            self._play_installed_game()
+            mode = self.preferred_play_mode if getattr(self, "remember_play_choice", False) else None
+            if mode:
+                self._play_installed_game(mode)
+            else:
+                self._show_play_mode_selector()
             return
         release = self.latest_game_release
         if release and release.get("verified_package"):
@@ -1123,7 +1127,63 @@ class ForgeLiveMixin:
             self._forge_base_dir(), "assets", "icons", "cfr_icon.png")
         return ask_play_outdated(self, context, icon_path=icon_path)
 
-    def _play_installed_game(self):
+    def _show_play_mode_selector(self, event=None):
+        """Right-click always opens the chooser, regardless of saved choice."""
+        import tkinter as tk
+        if not self.game_install_path:
+            self.status_label.configure(text="Choose the game folder in Settings.")
+            return
+        existing = getattr(self, "_play_mode_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return
+        win = tk.Toplevel(self)
+        self._play_mode_window = win
+        win.title("Crash Forge: Racing - Launch Game")
+        win.configure(bg="#0C0F14")
+        win.resizable(False, False)
+        win.transient(self)
+        win.geometry("460x440")
+        x = self.winfo_rootx() + max(0,(self.winfo_width()-460)//2)
+        y = self.winfo_rooty() + max(0,(self.winfo_height()-440)//2)
+        win.geometry(f"+{x}+{y}")
+        tk.Frame(win,height=5,bg="#FF6A00").pack(fill="x")
+        tk.Label(win,text="LAUNCH GAME",font=("Bahnschrift SemiBold",19),
+                 bg="#0C0F14",fg="#FFFFFF").pack(anchor="w",padx=24,pady=(20,2))
+        tk.Label(win,text="Choose how to start Crash Forge: Racing",
+                 bg="#0C0F14",fg="#A0A7B0").pack(anchor="w",padx=24,pady=(0,14))
+        remember=tk.BooleanVar(value=bool(getattr(self,"remember_play_choice",False)))
+        def choose(mode):
+            self.remember_play_choice = bool(remember.get())
+            self.preferred_play_mode = mode if self.remember_play_choice else "normal"
+            if not self._save_launcher_settings():
+                self.status_label.configure(text="Could not save launch preferences.")
+            win.destroy()
+            self._play_installed_game(mode)
+        items=(
+            ("normal","PLAY WITH MODS","Start normally with your installed mods."),
+            ("clean","PLAY WITHOUT MODS","One clean session; your mod files stay intact."),
+            ("debug","DEBUG MODE","Open the game with a visible console."),
+        )
+        for mode,title,detail in items:
+            card=tk.Frame(win,bg="#1A1F27",highlightbackground="#343A43",
+                          highlightthickness=1,cursor="hand2")
+            card.pack(fill="x",padx=24,pady=4,ipady=5)
+            for line,fg,font in ((title,"#FFAD6C",("Bahnschrift SemiBold",11)),
+                                 (detail,"#AEB5BC",("Bahnschrift",9))):
+                lbl=tk.Label(card,text=line,bg="#1A1F27",fg=fg,font=font,
+                             cursor="hand2",anchor="w")
+                lbl.pack(fill="x",padx=12,pady=2)
+                lbl.bind("<Button-1>",lambda e,m=mode:choose(m))
+            card.bind("<Button-1>",lambda e,m=mode:choose(m))
+        tk.Checkbutton(win,text="Remember my choice",variable=remember,
+                       bg="#0C0F14",fg="#DBDEE2",selectcolor="#242A32",
+                       activebackground="#0C0F14",activeforeground="#FF9B53",
+                       font=("Bahnschrift",10)).pack(anchor="w",padx=23,pady=(10,4))
+        tk.Button(win,text="CANCEL",command=win.destroy,bg="#242A32",
+                  fg="#F1F1F1",relief="flat",width=15).pack(pady=(4,12))
+
+    def _play_installed_game(self, mode="normal"):
         """Launch only from the explicit Settings folder, with visible errors."""
         if getattr(self, "game_update_busy", False):
             self.status_label.configure(
@@ -1157,13 +1217,26 @@ class ForgeLiveMixin:
             iso_integrity.start_background_check(self.game_install_path, "play")
         except Exception:
             pass
+        if mode == "clean":
+            try:
+                probe = subprocess.run([state["exe_path"], "--supports-no-mods"],
+                                       cwd=self.game_install_path, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, timeout=5,
+                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                if probe.returncode != 0 or b"CFR_NO_MODS_V1" not in probe.stdout:
+                    raise RuntimeError("Installed game does not support clean-session launch.")
+            except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+                self.status_label.configure(text="Clean launch needs a newer native game build.")
+                messagebox.showinfo("Clean launch", str(exc)+"\nNo mods or game files were changed.", parent=self)
+                return
         try:
-            # The console-subsystem game must never flash a command prompt.
-            hidden = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            hidden = subprocess.CREATE_NO_WINDOW if os.name == "nt" and mode != "debug" else 0
             process = subprocess.Popen(
-                [state["exe_path"]], cwd=self.game_install_path,
+                [state["exe_path"]] + (["--no-mods"] if mode == "clean" else []),
+                cwd=self.game_install_path,
                 creationflags=hidden, stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                stdout=None if mode == "debug" else subprocess.DEVNULL,
+                stderr=None if mode == "debug" else subprocess.DEVNULL)
             self.status_label.configure(text="Starting Crash Forge: Racing...")
             # Popen succeeds even when the executable immediately fails.
             # Check once on the UI thread without blocking the launcher.

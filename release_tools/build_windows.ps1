@@ -26,7 +26,7 @@ $featuredAsset = (Join-Path $Source "assets\news\latest_update.webp") + ";assets
 $historyAsset = (Join-Path $Source "assets\news\publications.json") + ";assets/news"
 # If images are provided later, bundle them under their ORIGINAL version.
 $newsArtArguments = @()
-foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp", "forge-news-v0.3.49.webp", "forge-news-v0.3.50.webp", "forge-news-v0.3.51.webp", "forge-news-v0.3.52.webp", "forge-news-v0.3.53.webp", "forge-news-v0.3.54.webp")) {
+foreach($name in @("forge-news-v0.3.37.webp", "forge-news-v0.3.38.webp", "forge-news-v0.3.39.webp", "forge-news-v0.3.41.webp", "forge-news-v0.3.42.webp", "forge-news-v0.3.43.webp", "forge-news-v0.3.44.webp", "forge-news-v0.3.45.webp", "forge-news-v0.3.46.webp", "forge-news-v0.3.47.webp", "forge-news-v0.3.48.webp", "forge-news-v0.3.49.webp", "forge-news-v0.3.50.webp", "forge-news-v0.3.51.webp", "forge-news-v0.3.52.webp", "forge-news-v0.3.53.webp", "forge-news-v0.3.54.webp", "forge-news-v0.3.55.webp")) {
   $picture = Join-Path $Source ("assets\news\" + $name)
   if(Test-Path -LiteralPath $picture) {
     $newsArtArguments += @("--add-data", ($picture + ";assets/news"))
